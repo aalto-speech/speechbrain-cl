@@ -1,0 +1,16 @@
+env/
+sssb/
+__pycache__
+data/
+test_recipes/*/*/*/results/
+test_recipes/*/*/*/exp/
+.vscode
+.kdev
+test_recipes/*/ASR/seq2seq/lm-data/
+test_recipes/*/ASR/seq2seq/shards/
+test_recipes/*/ASR/seq2seq/pretrained_model_checkpoints/
+test_recipes/*/ASR/seq2seq/*.out
+*/*/*/*/*.png
+*/*/*/*/*.pt
+cl.egg-info/
+dist/
