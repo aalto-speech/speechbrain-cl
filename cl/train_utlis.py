@@ -21,7 +21,9 @@ Usage:
     - The `fit()` method creates a `Brain` model and fits it on
         the data provided in the hparams file. You need to make sure
         that you have called a "preparation" file that initializes
-        the exps directory and creates the *.csv files.
+        the exps directory and creates the *.csv files. The `train.py` 
+        and `prepare_lp.py` files contain an example for the Lahjoita
+        Puhetta dataset.
     - The `dataio_prepare()` method defines the text/audio pipelines 
         and returns the required datasets (`CurriculumDataset`s).
     - The `get_tokenizer()` method checks if we are using an LM and 
@@ -32,10 +34,10 @@ Usage:
     - The `webdataio_prepare()` is used for sharded datasets. In this
         case you must have already sharded your dataset in some directory
         and you must pinpoint the location in the <hparams>.yaml file.
-        This was adapted from Aku Rouhe's recipe.
+        This was copy-pasted from Aku Rouhe's recipe.
 
 Authors
- * Georgios Karakasidis 2022
+ * George Karakasidis 2022
 """
 
 import os
@@ -164,6 +166,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR_Aku):
             reverse=hparams.get("reverse", False),
         )
         asr_brain.sorting_dict = sorting_dict
+        asr_brain.final_sortings = sorting_dict.copy()
     else:
         asr_brain.sorting_dict = {}
     
@@ -234,32 +237,37 @@ def dataio_prepare(hparams, device):
 
     elif hparams["sorting"] == "ascending":
         # we sort training data to speed up training and get better results.
-        train_data = train_data.filtered_sorted(sort_key="duration")
+        train_data = train_data.filtered_sorted(
+            sort_key="duration",
+            noise_percentage=hparams.get('noisy_random_percentage', None),
+        )
         # when sorting do not shuffle in dataloader ! otherwise is pointless
         hparams["dataloader_options"]["shuffle"] = False
 
     elif hparams["sorting"] == "descending":
         train_data = train_data.filtered_sorted(
-            sort_key="duration", reverse=True
+            sort_key="duration", reverse=True,
+            noise_percentage=hparams.get('noisy_random_percentage', None),
         )
         # when sorting do not shuffle in dataloader ! otherwise is pointless
         hparams["dataloader_options"]["shuffle"] = False
 
     elif hparams["sorting"] == "random":
-        tmp = train_data.filtered_sorted(sort_key="random", hparams=hparams)
-        if tmp is None:
-            # The dataset will be shuffled on the next iteration
-            hparams["dataloader_options"]["shuffle"] = True
-        else:
-            train_data = tmp
-            hparams["dataloader_options"]["shuffle"] = False
-    elif hparams["sorting"] == "no":
+        hparams['do_subsample'] = True
+        hparams['subsampling_percentage'] = 1.
+        hparams['subsampling_n_epochs'] = hparams['number_of_epochs']
+        hparams['subsampling_increase_factor'] = None
+        # We will shuffle only once (otherwise we would shuffle every
+        # time we recovered from a checkpoint).
+        hparams["dataloader_options"]["shuffle"] = False
+    elif hparams["sorting"] in ["no", False]:
         hparams["dataloader_options"]["shuffle"] = False
         pass
     else:
         curr_keys = ", ".join(train_data.CURRICULUM_KEYS)
         raise NotImplementedError(
-            f"sorting must be one of: {curr_keys}, random, ascending or descending"
+            f"Invalid 'sorting' value: {hparams['sorting']}. 'sorting'\
+                must be one of: {curr_keys}, random, ascending or descending"
         )
 
     valid_data = sb.dataio.dataset.DynamicItemDataset.from_csv(
@@ -441,10 +449,14 @@ def webdataio_prepare(hparams):
 def get_tokenizer(hparams, device, annotation_read="wrd"):
     if _use_lm(hparams, device):
         return hparams['tokenizer']
-    tok_kwargs = {
-        'bos_id': hparams['bos_index'],
-        'eos_id': hparams['eos_index'],
-    }
+    # tok_kwargs = {
+    #     'bos_id': hparams['bos_index'],
+    #     'eos_id': hparams['eos_index'],
+    # }
+    tok_kwargs = {}
+    if hparams.get("use_wav2vec2", False) or hparams['bos_index'] != hparams['eos_index']:
+        tok_kwargs['bos_id'] = hparams['bos_index']
+        tok_kwargs['eos_id'] = hparams['eos_index']
 
     if os.path.isfile(hparams.get("lp_filelist", "")):
         logger.info("Creating a tokenizer based on a filelist (more text data).")

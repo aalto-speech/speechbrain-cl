@@ -7,31 +7,13 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 # from numpy import mod
-from .statmd import _read_stats, get_args, _read_args
+from .statmd import NoEpochsTrained, _read_stats, get_args, _read_args
 from .find_anomalies import read_single
+from .get_train_times import _find_best_epoch
+from cl.info.globals import MPL_COLORS, MAPPINGS
 
 
 plt.rcParams.update({'font.size': 19})
-
-# List of possible colors for matplotlib
-MPL_COLORS = [
-    "blue", "orange", "green", "red", "yellow", "black", 
-    "brown", "pink", "gray", "olive", "cyan", "purple"
-]
-
-MAPPINGS = {
-    "Crdnn": "CRDNN",
-    "Wer": "WER",
-    "Cer": "CER",
-    "Seqloss": "Sequence-to-Sequence Loss",
-    "Confs": "w/ Confidences",
-    "5k": "",
-    "Seqctcloss": "Sequence-to-Sequence w/ CTC Loss",
-    "Simple": "Ascending",
-    "Base": "Ascending",
-    "W2v2": "Wav2Vec 2.0",
-}
-
 
 labels = []
 def add_label(violin, label):
@@ -44,6 +26,54 @@ def capitalize(l: list):
     l = [s.capitalize() for s in l]  # capitalize all
     l = list(map(lambda x: MAPPINGS.get(x, x), l))  # check mappings
     return " ".join(l) # return single string
+
+def plot_valid_results(paths, metric="WER", output_path=None):
+    model_to_stats = {}
+    n_models = 0
+    max_epoch = 0
+    for path in paths:
+        try:
+            epochs, _, _, valid_metrics_dict = _read_stats([path], [metric])
+        except NoEpochsTrained:
+            print(f"Model {path} ignored since it hasn't been trained.")
+            continue
+        n_models += 1
+        tmp = max(map(lambda x: int(x[0]), epochs))
+        if tmp > max_epoch:
+            max_epoch = tmp
+        model_to_stats[path] = [epochs, valid_metrics_dict]
+    assert n_models <= len(MPL_COLORS), f"You will need to rotate the MPL_COLORS list. {epochs=}"
+    random.shuffle(MPL_COLORS)
+
+    random_colors = (MPL_COLORS * round(n_models/len(MPL_COLORS) + 0.5))[:n_models]
+    fig = plt.figure(figsize=(16, 12))
+    fig.suptitle('Model Performances', fontsize=25)
+    plt.title(f"Model Performances on Validation Set")
+    x_axis = list(range(1, max_epoch+1))
+    for i, path in enumerate(model_to_stats):
+        epochs, valid_metrics_dict = model_to_stats[path]
+        best_valid_epoch, best_valid_wer = _find_best_epoch(epochs, valid_metrics_dict)
+        identifier = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        vms = [vm[0] for vm in valid_metrics_dict[metric]]
+        # if len(vms) < max_epoch:
+        #     vms += [vms[-1]] * (max_epoch-len(vms))
+        x_axis = [int(e[0]) for e in epochs]
+        best_epoch_index = [ind for ind, x in enumerate(x_axis) if int(x) == best_valid_epoch][0]
+        vm_best_wer = [y for ind, y in enumerate(vms) if ind == best_epoch_index][0]
+        plt.plot(x_axis, vms, linewidth=4, label=f"{identifier}", color=random_colors[i])
+        plt.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
+        plt.plot([best_valid_epoch], [vm_best_wer], 'o', ms=14, color=random_colors[i])
+        plt.xticks(list(range(1, max_epoch+1)))
+        plt.legend(loc='upper right')
+        plt.xlabel("Epoch")
+        plt.ylabel(f"Metric {metric}")
+    fig.tight_layout()
+    if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
+        print("Showing final plot...")
+        plt.show()
+    else:
+        print("Saving plot under:", output_path)
+        plt.savefig(output_path)
 
 
 def plot_logs(paths, metrics=["PER"], output_path=None, print_seed=False):
@@ -180,6 +210,8 @@ def testset_boxplot_comparison(args):
         
 def plot_logs_dispatcher(args):
     paths, metrics, output_path, _ = _read_args(args)
+    if args.plot_valid_results is True:
+        return plot_valid_results(paths, metrics[0], output_path)
     return plot_logs(paths, metrics, output_path, args.print_seed)
 
 def main():

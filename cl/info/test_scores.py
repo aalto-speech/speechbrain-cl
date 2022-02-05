@@ -17,8 +17,18 @@ def main(res_dir, metrics=DEFAULT_METRICS):
             └── 1001
 
     """
-    assert os.path.isdir(res_dir), res_dir
-    log_paths = glob.glob(os.path.join(res_dir, "*", "*", "log.txt"))
+    if isinstance(res_dir, list) and len(res_dir) > 1:
+        log_paths = []
+        for p in res_dir:
+            log_paths += glob.glob(os.path.join(p, "*", "log.txt"))
+    elif isinstance(res_dir, str):
+        assert os.path.isdir(res_dir), res_dir
+        log_paths = glob.glob(os.path.join(res_dir, "*", "*", "log.txt"))
+    elif isinstance(res_dir, list) and len(res_dir) == 1:
+        log_paths = glob.glob(os.path.join(res_dir[0], "*", "*", "log.txt"))
+        log_paths += glob.glob(os.path.join(res_dir[0], "*", "log.txt"))
+    else:
+        raise ValueError("Got invalid directory: {}.".format(res_dir))
     for log in log_paths:
         seed = os.path.dirname(log)
         model_name = os.path.basename(os.path.dirname(seed))
@@ -63,8 +73,8 @@ if __name__ == "__main__":
     metric_maps = {m[0].lower(): m for m in AVAILABLE_METRICS}
     reverse_maps = {v: k for k, v in metric_maps.items()}
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results-dir", "--res-dir", "-d", metavar="RESULTS_DIR", dest="res_dir", required=True, 
-        help="Path to the directory containing the results of your models."
+    parser.add_argument("--results-dir", "--res-dir", "-d", nargs="+", metavar="RESULTS_DIR", dest="res_dir", required=True, 
+        help="Path(s) to the directory containing the results of your models."
     )
     parser.add_argument(
         "--metrics", "-m", choices=AVAILABLE_METRICS+list(metric_maps.keys()), 

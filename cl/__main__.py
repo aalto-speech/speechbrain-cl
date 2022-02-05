@@ -1,9 +1,4 @@
-#!/usr/bin/python
-""" CLI tool for the library.
-
-Authors
- * Georgios Karakasidis 2022
-"""
+#!/m/teamwork/t40511_asr/p/curriculum-e2e/startover/sssb/bin/python
 import argparse
 
 from .info.visualize import testset_boxplot_comparison, plot_logs_dispatcher
@@ -68,6 +63,10 @@ log_plot_parser.add_argument(
     help="Whether to also include the seed information of the experiment's\
         directories."
 )
+log_plot_parser.add_argument(
+    "--plot-valid-results", "-v", default=False, action="store_true",
+    help="If provided then the validation set's performance progress will be plotted for each model."
+)
 log_plot_parser = _add_parser_args(log_plot_parser)
 log_plot_parser.set_defaults(func=plot_logs_dispatcher)
 
@@ -90,6 +89,8 @@ train_times_parser.add_argument("--out-plot-path", "-o", required=False,
     default=None, help="If provided, the output plot (assuming -v is \
         also provided) will be saved there."
 )
+train_times_parser.add_argument("--silent", "-s", default=False, action="store_true",
+    help="If provided, the program won't throw NoEpochsTrained errors.")
 train_times_parser.set_defaults(func=get_train_times)
 
 args = parser.parse_args()

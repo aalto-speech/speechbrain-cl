@@ -6,7 +6,7 @@ The FileListTokenizer class is adapted from
 `speechbrain/speechbrain/tokenizers/SentencePiece.py`
 
 Authors
- * Georgios Karakasidis 2021
+ * George Karakasidis 2021
 
 """
 
@@ -59,21 +59,21 @@ class FileListTokenizer:
         self.split_by_whitespace = split_by_whitespace
         self.remove_special_tokens = remove_special_tokens or self.hparams.get('remove_special_tokens', False)
         # 1. Get filelist containing paths to the transcript files
-        #    E.g. /path/to/trns.txt
+        #    E.g. /path/to/lp-trns.txt
         #    The file shall be in the format:
         #      /path/to/transcript1.txt
         #      /path/to/transcript2.txt
         #      ...
         #      /path/to/transcriptN.txt
         #    Each file may contain multiple lines of text. We will combine them.
-        trans_path = self.hparams.get("lp_filelist")
-        if trans_path is None:
+        lp_trans_path = self.hparams.get("lp_filelist")
+        if lp_trans_path is None:
             raise ValueError("`lp_filelist` parameter missing from the yaml file.")
         if output_folder is None:
             output_folder = self.hparams.get("spm_folder", self.hparams['save_folder'])
         
         # 2. Now create a .txt file of all transcripts combined
-        self.text_file: str = os.path.join(output_folder, "train-complete-sp.txt")# self.hparams["train_csv"].replace(".csv", "_sp.txt")
+        self.text_file: str = os.path.join(output_folder, "lp-train-complete-sp.txt")# self.hparams["train_csv"].replace(".csv", "_sp.txt")
         # 3. Define tokenizer's model file
         self.prefix_model_file = os.path.join(
             output_folder, 
@@ -81,7 +81,7 @@ class FileListTokenizer:
         )
         if not os.path.isfile(self.prefix_model_file+".model"):
             if not os.path.isfile(self.text_file):
-                run_on_main(self.filelist_to_text, kwargs={"filelist_path": trans_path})
+                run_on_main(self.filelist_to_text, kwargs={"filelist_path": lp_trans_path})
             # 4. Now train a bpe model
             run_on_main(self._train_BPE)
         

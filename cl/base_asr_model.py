@@ -1,9 +1,4 @@
-#!/usr/bin/python
-""" Base ASR Brain. This shouldn't be changed.
-
-Authors
- * Georgios Karakasidis 2022
-"""
+#!/usr/bin/env python3
 import ast
 from copy import deepcopy
 import os
@@ -20,14 +15,14 @@ import torch
 import logging
 from tqdm import tqdm
 import speechbrain as sb
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 from abc import ABC, abstractmethod
 from speechbrain.utils.data_utils import undo_padding
 from speechbrain.utils.metric_stats import wer_details_for_batch
 from speechbrain.utils.distributed import run_on_main
 from speechbrain.dataio.batch import PaddedBatch
 # from speechbrain.dataio.dataloader import SaveableDataLoader
-from speechbrain.dataio.dataset import FilteredSortedDynamicItemDataset
+from speechbrain.dataio.dataset import DynamicItemDataset, FilteredSortedDynamicItemDataset
 from .curriculum import CurriculumDataset, CurriculumSubset
 from .utils import checkpoint_wrapper_cl, strip_spaces
 # from speechbrain.utils.metric_stats import wer_details_for_batch
@@ -47,6 +42,9 @@ YamlTupleSafeLoader.add_constructor(
 # Define training procedure
 @sb.utils.checkpoints.register_checkpoint_hooks
 class BaseASR(sb.core.Brain, ABC):
+
+    VALID_CL_KEYS = ['ascending', 'descending', 'random']  + CurriculumDataset.CURRICULUM_KEYS
+
     def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
                  checkpointer=None, sorting=None, train_set=None, train_loader_kwargs=None,
                  sorting_dict=None, final_sorting_dict=None):
@@ -88,10 +86,7 @@ class BaseASR(sb.core.Brain, ABC):
         #       keep the same dict twice in memory. Check when we can avoid this.
         self.final_sortings: dict = final_sorting_dict
         if self.final_sortings is None:
-            if self.sorting_dict is not None:
-                self.final_sortings = self.sorting_dict.copy()
-            else:
-                self.final_sortings = {}
+            self.final_sortings = (self.sorting_dict or {}).copy()
         # If we are loading a checkpoint on on_fit_start then we are going to 
         #  overwrite the dataloader on on_stage_start (due to curriculum).
         self._loaded_checkpoint = False  # used in utils.py (checkpoint_wrapper_cl function)
@@ -104,10 +99,21 @@ class BaseASR(sb.core.Brain, ABC):
         # Whether to use fixed sortings or not (usefull in transfer learning CL approach)
         self.use_fixed_sorting = (getattr(self.hparams, "use_fixed_sorting", False) is True) and hasattr(self.hparams, "pretrained_model_hparams")
         # Prefix for dictionary save location
-        self.dict_log_prefix = "subsample_" if getattr(self.hparams, 'do_subsample', False) else ""
+        self.dict_log_prefix = "subsample_" if self.do_subsample else ""
         # logger.info(f"Initialized brain. Type of train_set: {type(self.train_set)}.")
+        self.sorting_dict_needs_save = (self.sorting != "random") and (not self.use_fixed_sorting) or self.do_subsample
+        if self.use_fixed_sorting and len(self.final_sortings) == 0:
+            try:
+                self.final_sortings = self.load_sorting_dict(epoch=0, inplace=False)
+                logger.info(f"Loaded dictionary with final sortings. Length: {len(self.final_sortings)}.")
+            except ValueError:
+                logger.warning(f"{'='*80}\nCould not find a sorting dictionary even though you are using\
+                     fixed transfer cl. This could lead to issues.\n{'='*80}")
 
-
+    @property
+    def do_subsample(self):
+        return getattr(self.hparams, 'do_subsample', False)
+    
     # Abstract methods MUST be implemented by the user.
     @abstractmethod
     def compute_forward(self, batch, stage):
@@ -125,6 +131,28 @@ class BaseASR(sb.core.Brain, ABC):
         # This needs to be different because on the TRAIN stage we also use curriculum.
         # An example implementation is to initialize the cer, wer computers.
         return
+
+    def make_random_dataloader(self):
+        assert self.sorting == "random", self.sorting
+        assert self.hparams.do_subsample is True
+        self.hparams.dataloader_options["shuffle"] = self.train_loader_kwargs["shuffle"] = False
+        random_ids_path = os.path.join(
+            self.hparams.output_folder,
+            f"random_ids.npy"
+        )
+        if os.path.isfile(random_ids_path):
+            shuffled_train_ids = np.load(random_ids_path)
+        else:
+            shuffled_train_ids = np.random.permutation(len(self.train_set))
+            np.save(random_ids_path, shuffled_train_ids)
+        self.train_set = CurriculumSubset(self.train_set, shuffled_train_ids)
+        dataloader = self.make_dataloader(
+            dataset=self.train_set,
+            stage=sb.Stage.TRAIN,
+            **self.train_loader_kwargs
+        )
+        self._loaded_checkpoint = False
+        return dataloader
     
     def fit_batch(self, batch):
         """Train the parameters given a single batch in input"""
@@ -196,15 +224,31 @@ class BaseASR(sb.core.Brain, ABC):
         if stage != sb.Stage.TRAIN:
             return
         
-        if self.sorting == "no":
+        # ############################################################
+        # ###################### CASE 1: No CL #######################
+        # ############################################################
+        if self.sorting in ["no", False, ""]:
             return  # no sorting needs be done
         
-        if self.use_fixed_sorting:
-            # The train dataloader must have already been created in train.py
-            # logger.info("Ignoring on_stage_start since we assume that we already have a dataloader")
-            return
+        # ############################################################
+        # ################### CASE 2: Random CL ######################
+        # ############################################################
+        if self.sorting == "random":
+            if not (
+                isinstance(self.train_set, DataLoader)
+                or isinstance(self.train_set, LoopedLoader)
+            ):
+                self.train_set = self.make_random_dataloader()
+            # logger.info(f"On stage start: After random. Type of train_set: {type(self.train_set)}.")
+            return self.train_set
+
         
-        if getattr(self.hparams, 'do_subsample', False) is True:
+        # ############################################################
+        # ################### CASE 3: Subsampling ####################
+        # ############################################################
+        use_default_training = epoch <= getattr(self.hparams, 'default_sorting_epochs', 1) and (self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []))
+        # 'random' is not used with subsampling since it a special case where subsample_percentage=1
+        if self.do_subsample and not use_default_training and self.sorting != "random":
             logger.info("`do_subsample` is True.")
             percentage = getattr(self.hparams, 'subsampling_percentage', 0.3)
             increase_factor = getattr(self.hparams, 'subsampling_increase_factor', None)
@@ -220,6 +264,15 @@ class BaseASR(sb.core.Brain, ABC):
                 msg = f"`do_subsample` is true but not used."
                 logger.warning(msg)
                 raise Exception(msg)
+        
+        
+        # ############################################################
+        # ######### CASE 4: Transfer CL with fixed sortings ##########
+        # ############################################################
+        if self.use_fixed_sorting:
+            # The train dataloader must have already been created in train.py
+            # logger.info("Ignoring on_stage_start since we assume that we already have a dataloader")
+            return
 
         
         self._curriculum_log_saved = False
@@ -243,7 +296,9 @@ class BaseASR(sb.core.Brain, ABC):
             reverse = getattr(self.hparams, 'reverse', False)
             if len(self.final_sortings) == 0:
                 raise Exception("You should have already loaded a checkpoint at this point.")
-            if len(self.sorting_dict) == len(self.train_set):
+            if self.use_fixed_sorting:
+                assert len(self.final_sortings) >= len(self.train_set), f"{len(self.final_sortings)=} --- {len(self.train_set)=}"
+            elif len(self.sorting_dict) == len(self.train_set):
                 # no need to copy since `self.sorting_dict = {}` will lose the connection (?? doubt??)
                 self.final_sortings = self.sorting_dict.copy()
             # logger.debug(f"{len(self.final_sortings)=}, {len(self.train_set)=}.")
@@ -261,6 +316,7 @@ class BaseASR(sb.core.Brain, ABC):
                 # ckpt_prefix="curriculum-",
                 **self.train_loader_kwargs
             )
+            # TODO: Maybe we don't need to empty these dicts
             self.train_set.sorting_dict = self.sorting_dict = {}
             self.final_sortings = {}
             # logger.info(f"On stage start: After load and sort. Type of train_set: {type(self.train_set)}.")
@@ -268,35 +324,23 @@ class BaseASR(sb.core.Brain, ABC):
         
         # logger.info(f"On stage start: Before any method. Type of train_set: {type(self.train_set)}.")
         # ############################################################
-        # ####### CASE 1: Default Sorters (asc, desc, random) ########
+        # ########## CASE 5: Default Duration-Base Sorters ###########
         # ############################################################
-        if self.sorting == "random":
-            if not (
-                isinstance(self.train_set, DataLoader)
-                or isinstance(self.train_set, LoopedLoader)
-            ):
-                self._loaded_checkpoint = False
-                self.train_set = self.make_dataloader(
-                    self.train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs
-                )
-                self.hparams.dataloader_options["shuffle"] = self.train_loader_kwargs["shuffle"] = False
-            # logger.info(f"On stage start: After random. Type of train_set: {type(self.train_set)}.")
-            return self.train_set
-        if self.sorting not in getattr(self.train_set, 'CURRICULUM_KEYS', []):
+        if self.sorting not in CurriculumDataset.CURRICULUM_KEYS:
             return
         # ############################################################
-        # ####### CASE 2: Default Ascending Sorting (for CL) #########
+        # ####### CASE 6: Default Ascending Sorting (for CL) #########
         # ############################################################
         # The parameter 'default_sorting_epochs' denotes the number of "preparation" epochs before
         # starting to sort by the curriculum key. A higher number will result in better prepared
         # models that can output better wer/cer/loss-based sortings. The drawback is that a high
         # number of preparation epochs will degrade the importance of our curriculum methods.
-        if epoch <= getattr(self.hparams, 'default_sorting_epochs', 1) and (self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', [])):
+        if use_default_training:
             logger.info(f"Epoch {epoch}: Sorting the dataset based on the duration of the examples before the first epoch.")
             return default_sort()
         
         # ############################################################
-        # ################# CASE 3: Loss Sorters #####################
+        # ################# CASE 7: Loss Sorters #####################
         # ############################################################
         if self.sorting in getattr(self.train_set, 'LOSS_SORTERS', []):
             if len(self.sorting_dict) > 0:
@@ -308,7 +352,7 @@ class BaseASR(sb.core.Brain, ABC):
             return default_sort()
         
         # ############################################################
-        # ################# CASE 4: Metric Sorters ###################
+        # ################# CASE 8: Metric Sorters ###################
         # ############################################################
         if self.sorting in getattr(self.train_set, 'METRIC_SORTERS', []):
             if len(self.sorting_dict) > 0:
@@ -320,7 +364,7 @@ class BaseASR(sb.core.Brain, ABC):
             return default_sort()
         
         # ############################################################
-        # ####### CASE 5: Joint Curriculum (NOT IMPLEMENTED) #########
+        # ####### CASE 9: Joint Curriculum (NOT IMPLEMENTED) #########
         # ############################################################
         # For JointCurriculum (check src/classes.py)
         if isinstance(getattr(self.train_set, 'sorting', None), tuple) \
@@ -330,30 +374,30 @@ class BaseASR(sb.core.Brain, ABC):
 
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of an epoch."""
-        if self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []) and stage==sb.Stage.TRAIN:
-            self._loaded_checkpoint = False
-            # if stage == sb.Stage.TRAIN:
-            #     self.checkpointer.save_and_keep_only(
-            #         end_of_epoch=False,
-            #         num_to_keep=2,
-            #         verbosity=logging.DEBUG,
-            #     )
-            if self.hparams.epoch_counter.current+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
-                # E.g. if we are on epoch 1 and `default_sorting_epochs` is 2, then 
-                # the sorting_dict will be empty.
-                # But, if we are on epoch 2 and `default_sorting_epochs` is 2, then
-                # the sorting dict must be filled with all scores, so that when we
-                # reach `on_stage_start` on epoch 3, we will have the sortings.
-                pass
-            elif self.use_fixed_sorting is True:  # train_set is a dataloader
-                pass
-            elif getattr(self.hparams, 'do_subsample', False) and hasattr(self, 'train_subset'):
-                assert len(self.sorting_dict) == len(self.train_subset), f"{len(self.sorting_dict)=} ... {len(self.train_subset)=}"
-            else:
-                assert len(self.sorting_dict) == len(self.train_set), f"{len(self.sorting_dict)=} ... {len(self.train_set)=}"
-            self.final_sortings = self.sorting_dict.copy()
-        self._save_curriculum_log(stage, epoch, self.sorting_dict)
         if stage == sb.Stage.TRAIN:
+            if self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []):
+                self._loaded_checkpoint = False
+                if self.hparams.epoch_counter.current+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
+                    # E.g. if we are on epoch 1 and `default_sorting_epochs` is 2, then 
+                    # the sorting_dict will be empty.
+                    # But, if we are on epoch 2 and `default_sorting_epochs` is 2, then
+                    # the sorting dict must be filled with all scores, so that when we
+                    # reach `on_stage_start` on epoch 3, we will have the sortings.
+                    pass
+                elif self.use_fixed_sorting is True:  # train_set is a dataloader
+                    pass
+                elif self.do_subsample and hasattr(self, 'train_subset'):
+                    assert len(self.sorting_dict) == len(self.train_subset), f"{len(self.sorting_dict)=} ... {len(self.train_subset)=}"
+                else:
+                    assert len(self.sorting_dict) == len(self.train_set), f"{len(self.sorting_dict)=} ... {len(self.train_set)=}"
+                if not (self.use_fixed_sorting and self.do_subsample):
+                    self.final_sortings = self.sorting_dict.copy()
+                elif len(self.final_sortings) < len(self.train_set) and self.do_subsample and self.use_fixed_sorting:
+                    raise ValueError(f"You are doing subsampling with fixed sortings but the final sorting\
+                        dictionary does not contain the full sortings ({len(self.final_sortings)=} while\
+                            {len(self.train_set)=} and {len(self.sorting_dict)=}).")
+            if self.sorting != "random":
+                self._save_curriculum_log(stage, epoch, self.sorting_dict)
             # Also log the current training time
             logger.info(f"Currently training for {round(self.current_training_time/60, 2)} minutes.")
         # logger.info(f"On stage end. Type of train_set: {type(self.train_set)}.")
@@ -401,24 +445,44 @@ class BaseASR(sb.core.Brain, ABC):
             'curriculum_logs',
             f"{self.dict_log_prefix}{self.sorting}_subset_ids-{suffix}.npy"
         )
+        def get_train_subset(shuffled_train_ids):
+            if isinstance(self.train_set, FilteredSortedDynamicItemDataset):
+                logger.warning(f"Using curriculum subset for filteredsorted dataset. ERROR?")
+                train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
+            elif isinstance(self.train_set, DataLoader):
+                # For random sorting
+                raise NotImplementedError(f"Cannot subsample a dataloader train set of type {type(self.train_set)} ({self.sorting=}).")
+            elif isinstance(self.train_set, CurriculumDataset):
+                train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
+            else:
+                raise TypeError(f"Cannot subsample train set of type {type(self.train_set)} ({self.sorting=}).")
+            return train_subset
         # logger.info(f"{curr_log_path=}")
         if os.path.isfile(curr_log_path) and os.path.isfile(subset_ids_path):
             logger.info("Subsampling: Loading pre-existing CL dictionary.")
-            self.sorting_dict = self.load_sorting_dict(epoch=dummy_epoch)
+            self.sorting_dict = self.load_sorting_dict(epoch=dummy_epoch, inplace=False)
+            if len(self.final_sortings) < len(self.sorting_dict) and self.use_fixed_sorting:
+                self.final_sortings = self.load_sorting_dict(epoch=0, inplace=False)
             shuffled_train_ids = np.load(subset_ids_path)
-            self.train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
+            self.train_subset = get_train_subset(shuffled_train_ids)
             logger.info(strip_spaces(f"Loaded a precomputed train set with \
                 {len(shuffled_train_ids)} datapoints (out of {len(self.train_set)})."))
         else:
             shuffled_train_ids = np.random.permutation(len(self.train_set))[:round(percentage*len(self.train_set))]
-            self.train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
+            self.train_subset = get_train_subset(shuffled_train_ids)
             assert hasattr(self.train_subset, 'filtered_sorted'), f"{type(self.train_subset)=}"
             if current_epoch == 1 and len(self.sorting_dict) > 0:
-                self.sorting_dict = {k: v for k, v in self.sorting_dict.items() if k in self.train_subset.data_ids}
+                logger.info(f"Selecting {len(shuffled_train_ids)} random ids.")
+                self.sorting_dict = {k: self.sorting_dict[k] for k in self.train_subset.data_ids}
+            elif self.use_fixed_sorting and len(self.final_sortings) > len(self.sorting_dict):
+                logger.info(f"Selecting {len(shuffled_train_ids)} random ids from the fixed sortings.")
+                self.sorting_dict = {k: self.final_sortings[k] for k in self.train_subset.data_ids}
             else:
+                logger.info("We are going to create a new sorting dictionary.")
                 self.sorting_dict = self.create_curriculum_dict(
                     self.train_subset,
                     sorting_dict_save_path=curr_log_path,
+                    update_final_dict=not self.use_fixed_sorting,
                 )
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \
@@ -431,7 +495,8 @@ class BaseASR(sb.core.Brain, ABC):
             noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
         )
         dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
-        self.final_sortings = {}
+        if not self.use_fixed_sorting:
+            self.final_sortings = {}
         return dataloader
 
 
@@ -503,6 +568,7 @@ class BaseASR(sb.core.Brain, ABC):
             sorting_dict_log: str = None, 
             from_path: str = None, 
             epoch: int = None,
+            inplace: bool = True,
         ) -> dict:
         """ Loads a sorting dict for curriculum learning.
             If from_path is None we will use <output_folder>/curriculum_logs/<cl-method>_dict-epoch=<epoch>.log
@@ -514,6 +580,7 @@ class BaseASR(sb.core.Brain, ABC):
             assert os.path.isdir(from_path), f"Could not locate: {from_path}"
             if epoch is None:
                 try:
+                    # Get the log that corresponds to the biggest epoch
                     epoch = max(map(int, map(lambda filename: filename.split("epoch=")[1].split(".")[0], os.listdir(from_path))))
                 except IndexError:
                     msg = f"Expected log file of the form /path/to/<prefix><cl-method>_dict-epoch=<epoch>.log \
@@ -537,11 +604,20 @@ class BaseASR(sb.core.Brain, ABC):
                     logger.error(f"ValueError: '{str(e)}' occurred on line: {line.split()}")
                     raise e
                 sd[utt_id] = ast.literal_eval(score)
-        self.sorting_dict = sd
-        self.final_sortings = sd.copy()
-        return self.sorting_dict
+        if inplace:
+            self.sorting_dict = sd
+            self.final_sortings = sd.copy()
+            return self.sorting_dict
+        else:
+            return sd
     
-    def create_curriculum_dict(self, train_set, sorting_dict_save_path=None, progressbar=None):
+    def create_curriculum_dict(
+        self, 
+        train_set: DynamicItemDataset, 
+        sorting_dict_save_path: Optional[str] = None, 
+        progressbar: Optional[bool] = None,
+        update_final_dict: bool = True,
+    ):
         """ Create and return a curriculum dictionary based on the current checkpoint.
             Loads a checkpoint and iterates the train set for one epoch in order to 
             create the sorting dictionary.
@@ -556,12 +632,6 @@ class BaseASR(sb.core.Brain, ABC):
         self._wrap_distributed()
         # Eval mode since we don't want to update the loss
         self.modules.eval()
-        # Load a checkpoint if we previously stopped midway
-        if self.checkpointer is not None:
-            self.checkpointer.recover_if_possible(
-                importance_key=self.ckpt_importance_key,
-                device=torch.device(self.device)
-            )
         # Check progressbar config
         if progressbar is None:
             progressbar = not self.noprogressbar
@@ -572,10 +642,21 @@ class BaseASR(sb.core.Brain, ABC):
             or isinstance(train_set, LoopedLoader)
         ):
             train_set = self.make_dataloader(
-                train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs
+                train_set, 
+                stage=sb.Stage.TRAIN, 
+                ckpt_prefix="not-training-",
+                **self.train_loader_kwargs
             )
+        # Load a checkpoint if we previously stopped midway
+        if self.checkpointer is not None:
+            self.checkpointer.recover_if_possible(
+                importance_key=self.ckpt_importance_key,
+                device=torch.device(self.device)
+            )
+        # self.checkpointer.recover_if_possible(device=torch.device(self.device))
         self.sorting_dict = {}
-        logger.info(f"Will process {len(train_set.dataset)} data points from transfer learning CL.")
+        if self.use_fixed_sorting:
+            logger.info(f"Will process {len(train_set.dataset)} data points from transfer learning CL.")
         with tqdm(
             train_set,
             initial=self.step,
@@ -613,16 +694,18 @@ class BaseASR(sb.core.Brain, ABC):
                 #         self._save_intra_epoch_ckpt()
                 #     last_ckpt_time = time.time()
         # assert len(self.sorting_dict) == len(self.train_set), f"{len(self.sorting_dict)=}, {len(self.train_set)=}"
-        dataset = self.train_subset if getattr(self.hparams, 'do_subsample', False) and hasattr(self, 'train_subset') else self.train_set
+        dataset = self.train_subset if self.do_subsample and hasattr(self, 'train_subset') else self.train_set
         assert len(self.sorting_dict) == len(dataset), f"{len(self.sorting_dict)=}, {len(dataset)=}"
         if sorting_dict_save_path is not None:
             ordered_examples = [f"{k}\t{v}" for k, v in sorted(self.sorting_dict.items(), key=lambda x: x[1], reverse=True)]
+            os.makedirs(os.path.dirname(os.path.abspath(sorting_dict_save_path)), exist_ok=True)
             with open(sorting_dict_save_path, 'w') as fa:
                 # fa.write("ID\tScore\n")
                 fa.write('\n'.join(ordered_examples))
             logger.info("Log file saved under: {}".format(sorting_dict_save_path))
             self._curriculum_log_saved = True
-        self.final_sortings = self.sorting_dict.copy()
+        if update_final_dict:
+            self.final_sortings = self.sorting_dict.copy()
         return self.sorting_dict
 
     def _detokenize_from_list(self, predicted_tokens):
@@ -657,7 +740,9 @@ class BaseASR(sb.core.Brain, ABC):
     
 
     def _save_curriculum_log(self, stage, epoch: int, sorting_dict: dict):
-        if self._curriculum_log_saved is True or stage != sb.Stage.TRAIN or (self.use_fixed_sorting is True):
+        if self.sorting not in self.VALID_CL_KEYS or len(self.sorting) == 0:
+            return
+        if self._curriculum_log_saved is True or stage != sb.Stage.TRAIN or (not self.sorting_dict_needs_save):
             return
         def __save__(sorting_dict_log, ordered_examples):
             with open(sorting_dict_log, 'w') as fa:
@@ -665,16 +750,17 @@ class BaseASR(sb.core.Brain, ABC):
                 fa.write('\n'.join(ordered_examples))
             logger.info("Log file saved under: {}".format(sorting_dict_log))
             self._curriculum_log_saved = True
-        if (self.sorting in getattr(self.train_set, "CURRICULUM_KEYS", [])):
+        # TODO: Doesn't handle ascending+subsample save
+        if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
             # assert hasattr(self, 'sorting_dict')
             save_folder = os.path.join(self.hparams.output_folder, "curriculum_logs")
             if not os.path.isdir(save_folder):
                 os.mkdir(save_folder)
-            sorting_dict_log = os.path.join(save_folder, f"{self.sorting}_dict-epoch={epoch}.log")
+            sorting_dict_log = os.path.join(save_folder, f"{self.dict_log_prefix}{self.sorting}_dict-epoch={epoch}.log")
             ordered_examples = [f"{k}\t{v}" for k, v in sorted(sorting_dict.items(), key=lambda x: x[1], reverse=True)]
         elif isinstance(getattr(self, 'train_set', None), FilteredSortedDynamicItemDataset) and self.sorting != "random":
             # Output path
-            sorting_dict_log = os.path.join(self.hparams.output_folder, f"{self.sorting}_dict.log")
+            sorting_dict_log = os.path.join(self.hparams.output_folder, f"{self.dict_log_prefix}{self.sorting}_dict.log")
             if os.path.isfile(sorting_dict_log):
                 return
             # These are the keys in sorted order
@@ -696,15 +782,9 @@ class BaseASR(sb.core.Brain, ABC):
             # `reverse` is always true so it doesn't matter if we have ascending
             # or descneding-based curriculum.
             ordered_examples = [f"{tup[2]}\t{tup[0]}" for tup in sorted(filtered_ids, reverse=True)]
-        elif self.sorting == "random":
-            # Output path
-            sorting_dict_log = os.path.join(self.hparams.output_folder, f"{self.sorting}_dict.log")
-            if os.path.isfile(sorting_dict_log):
-                return
-            assert isinstance(self.train_set, DataLoader) or isinstance(self.train_set, LoopedLoader), type(self.train_set)
-            ordered_examples = []
-            for batch in self.train_set:
-                ordered_examples += batch.id
+        else:
+            raise NotImplementedError(f"Could not save sorting dict for method {self.sorting}\
+                when the type of the train set is {type(self.train_set)}.")
         __save__(sorting_dict_log, ordered_examples)
 
     def _update_dict(self, batch_id, value, dur, sorting_method=None):
@@ -745,12 +825,10 @@ class BaseASR(sb.core.Brain, ABC):
         assert len(predicted_tokens) == len(batch.id)
         tokens, tokens_lens = batch.tokens
         # Decode token terms to words
-        predicted_words: list = postprocess(self.tokenizer(
-            predicted_tokens, task="decode_from_list"
-        ))
+        predicted_words: list = self._detokenize_from_list(predicted_tokens)
         # Convert indices to words
         target_words = undo_padding(tokens, tokens_lens)
-        target_words = postprocess(self.tokenizer(target_words, task="decode_from_list"))
+        target_words = postprocess(self._detokenize_from_list(target_words))
 
         # Process predictions and truth so that they don't contain special tokens (.br, .fr etc)
         predicted_words = [re.sub("\.\w+", "", ' '.join(txt)).split() for txt in predicted_words]
@@ -900,7 +978,7 @@ class BaseASR(sb.core.Brain, ABC):
         except AttributeError:
             # i.e. self.current_training_time not found
             save_dict = {"step": self.step, "avg_train_loss": self.avg_train_loss,}
-        if self.use_fixed_sorting is True:
+        if not self.sorting_dict_needs_save:
             pass
         elif self.hparams.epoch_counter.current <= self.hparams.number_of_curriculum_epochs and \
               (isinstance(self.sorting_dict, dict) and len(self.sorting_dict) > 0):
@@ -911,8 +989,8 @@ class BaseASR(sb.core.Brain, ABC):
             save_dict["curriculum_step"] = self.train_set.step
             save_dict["running_average"] = getattr(self.train_set, "running_average", 0)
             save_dict['curriculum_dict'] = self.sorting_dict
-            dataset = self.train_subset if getattr(self.hparams, 'do_subsample', False) and hasattr(self, 'train_subset') else self.train_set
-            if len(self.sorting_dict) == len(dataset):
+            dataset = self.train_subset if self.do_subsample and hasattr(self, 'train_subset') else self.train_set
+            if len(self.sorting_dict) == len(dataset) and not self.use_fixed_sorting:
                 self.final_sortings = self.sorting_dict.copy()
             save_dict['final_sortings'] = self.final_sortings
             
@@ -939,7 +1017,7 @@ class BaseASR(sb.core.Brain, ABC):
             return
         if (self.sorting in CurriculumDataset.CURRICULUM_KEYS and self.use_fixed_sorting is True):
             if len(self.sorting_dict) == 0:
-                self.load_sorting_dict(epoch=0)
+                self.load_sorting_dict(epoch=0, inplace=True)
             return
         # ###############################################
         # ########## For Curriculum Learning ############

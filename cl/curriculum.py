@@ -1,19 +1,21 @@
-#!/usr/bin/
-""" Definitions of CurriculumDataset and CurriculumSubset.
-
-Authors
- * Georgios Karakasidis 2022
-"""
 import logging
+import time
 import random
 import os
-# from itertools import islice
+from itertools import islice
 from typing import (
     List, Tuple, Callable, Optional, Dict,
     Union, Sequence
 )
 # from collections.abc import Iterable
+import numpy as np
+from tqdm import tqdm
 from . import utils
+# from .classes import (
+#     MetricCurriculum, LossCurriculum, 
+#     JointCurriculum, BaseCurriculum
+# )
+import torch
 import speechbrain as sb
 from speechbrain.dataio.dataset import (
     DynamicItemDataset, 
@@ -250,14 +252,7 @@ class CurriculumDataset(DynamicItemDataset):
         hparams: Optional[dict] = None,
         noise_percentage: Optional[float] = None,
     ) -> FilteredSortedDynamicItemDataset:
-        if sort_key == "random":
-            sorting_dict_log = os.path.join(hparams['output_folder'], "random_dict.log")
-            if os.path.isfile(sorting_dict_log):
-                with open(sorting_dict_log, 'r') as fr:
-                    filtered_sorted_ids = [l.replace("\n", "").strip() for l in fr.readlines()]
-            else:
-                return None
-        elif sort_key not in self.CURRICULUM_KEYS:
+        if sort_key not in (self.CURRICULUM_KEYS + ['random']):
             # If the function is not called for "curriculum learning" 
             # then use the default behavior
             filtered_sorted_ids = self._filtered_sorted_ids(
@@ -274,7 +269,7 @@ class CurriculumDataset(DynamicItemDataset):
             # Normal behavior for curriculum learning.
             sorting_dict.pop('num_datapoints', None)
             filtered_sorted_ids: list = self._curriculum_filtered_ids(
-                sort_key, sorting_dict, reverse, select_n,
+                sorting_dict, reverse, select_n,
             )
         if isinstance(noise_percentage, float) and 0.0 < noise_percentage <= 1.0:
             # logger.info(f"{filtered_sorted_ids[:10]=}")
@@ -286,7 +281,6 @@ class CurriculumDataset(DynamicItemDataset):
 
     def _curriculum_filtered_ids(
         self,
-        sort_key: str,
         sorting_dict: Dict[str, Union[float, Tuple[float, float], Tuple[float, float, float]]],
         reverse: bool = False,
         select_n: Optional[int] = None,
@@ -388,6 +382,7 @@ class CurriculumSubset(CurriculumDataset):
     def __init__(self, dataset: CurriculumDataset, indices: Sequence[int], *args, **kwargs) -> None:
         self.dataset = dataset
         self.indices = indices
+        # logger.info(f"{dataset.data=}")
         super().__init__(data=dataset.data, *args, **kwargs)
 
     def __getitem__(self, idx):

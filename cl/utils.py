@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import subprocess
 
-from . import curriculum
+from cl import curriculum
 import speechbrain as sb
 from speechbrain.dataio.dataloader import SaveableDataLoader
 import unicodedata
@@ -20,29 +20,34 @@ SPECIAL_MARK_MATCHER = re.compile("\.\w+")
 
 
 def checkpoint_wrapper_cl(func):
-    def recover_if_applicable(self, stage, epoch):
-        dataloader = func(self, stage, epoch)
+    """ This wrapper recovers the dataloader to where it was stopped.
+    """
+    def recover_if_applicable(brain, stage, epoch):
+        dataloader = func(brain, stage, epoch)
         if stage != sb.Stage.TRAIN:
             return
         if not isinstance(dataloader, SaveableDataLoader):
             return dataloader
-        if hasattr(self, 'train_subset'):
-            train_len = len(self.train_subset)
+        if hasattr(brain, 'train_subset'):
+            train_len = len(brain.train_subset)
         else:
-            train_len = len(self.train_set)
+            train_len = len(brain.train_set)
         if (
-            self.sorting in curriculum.CurriculumDataset.CURRICULUM_KEYS and \
-            len(self.sorting_dict) < train_len
+            brain.sorting in curriculum.CurriculumDataset.CURRICULUM_KEYS and \
+            len(brain.sorting_dict) < train_len
            ) or (
-            self.sorting == "random" and self._loaded_checkpoint is False
+            brain.sorting == "random" and brain._loaded_checkpoint is False
            ):
              # Load latest checkpoint to resume training if interrupted
-            if self.checkpointer is not None:
-                self.checkpointer.recover_if_possible(
-                    device=torch.device(self.device)
+            if brain.checkpointer is not None:
+                old_epoch = brain.hparams.epoch_counter.current
+                brain.checkpointer.recover_if_possible(
+                    device=torch.device(brain.device)
                 )
-                self._loaded_checkpoint = True
-            self.hparams.epoch_counter.current += 1
+                # Keep the same old epoch
+                brain.hparams.epoch_counter.current = old_epoch
+                brain._loaded_checkpoint = True
+            brain.hparams.epoch_counter.current += 1
         return dataloader
     return recover_if_applicable
 

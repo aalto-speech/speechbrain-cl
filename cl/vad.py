@@ -9,6 +9,8 @@ from cl.batch import VADData
 
 logger = logging.getLogger(__name__)
 
+# savedir = "../VAD/results/pretrained_hf/"
+
 # VAD = VAD.from_hparams(source="speechbrain/vad-crdnn-libriparty", savedir=savedir)
 
 def _read_and_resample(audio_path, new_sr, sr=None):

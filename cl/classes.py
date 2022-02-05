@@ -1,9 +1,4 @@
 #!/usr/bin/python
-""" Deprecated
-
-Authors
- * Georgios Karakasidis 2022
-"""
 from re import T
 from typing import Dict, List
 import logging

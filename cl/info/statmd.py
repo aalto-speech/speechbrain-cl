@@ -2,11 +2,13 @@
 import os
 import argparse
 import glob
+try:
+    from cl.info.globals import DEFAULT_METRICS, AVAILABLE_METRICS
+except ImportError:
+    DEFAULT_METRICS = ["WER", "CER"]
+    AVAILABLE_METRICS = ["WER", "CER", "PER"]
 
 class NoEpochsTrained(Exception): pass
-
-AVAILABLE_METRICS = ['PER', 'WER', 'CER']
-DEFAULT_METRICS = ['WER', 'CER']  # Must be one of the above.
 
 _metric_maps = {m[0].lower(): m for m in AVAILABLE_METRICS}
 
