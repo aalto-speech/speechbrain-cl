@@ -11,6 +11,18 @@ git clone git@github.com:aalto-speech/speechbrain-cl.git
 python -m venv env
 # Source environment
 source ./env/bin/activate
+```
+
+- **Option 1:** Non-editable mode
+```bash
+# Install `build` and build the package
+python -m pip install build && python -m build
+# Install the created .whl file
+python -m pip install dist/cl-1.0a0-py2.py3-none-any.whl
+```
+
+- **Option 2:** Editable mode (you can perform changes to the source code):
+```bash
 # Install package in editable mode
 python -m pip install -e .
 ```

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import logging
 import speechbrain as sb
-from cl.asr_models.asr_base import ASR
+from cl.asr_models.asr_base import ASR_Old
 
 
 logger = logging.getLogger(__name__)
 
-class AsrWav2Vec2(ASR):
+class AsrWav2Vec2(ASR_Old):
     def compute_forward(self, batch, stage):
         """Forward computations from the waveform batches to the output probabilities."""
 

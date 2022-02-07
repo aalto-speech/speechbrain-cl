@@ -10,7 +10,7 @@ from cl.base_asr_model import BaseASR
 logger = logging.getLogger(__name__)
 
 # Define training procedure
-class ASR(BaseASR):
+class ASR_Old(BaseASR):
     def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
                  checkpointer=None, sorting=None, train_set=None, tokenizer=None,
                  train_loader_kwargs=None, *args, **kwargs):

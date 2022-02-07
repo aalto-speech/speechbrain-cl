@@ -5,10 +5,7 @@ from . import classes
 from . import filelist_tokenizer
 from . import batch
 from . import vad
-from .info import statmd
-from .info import visualize
-from .info import test_scores
-from .info import plot_metric_per_length
-from .info import find_anomalies
+from . import info
+from . import asr_models
 
 __version__ = "1.0a"
