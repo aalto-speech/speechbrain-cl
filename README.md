@@ -27,6 +27,29 @@ python -m pip install dist/cl-1.0a0-py2.py3-none-any.whl
 python -m pip install -e .
 ```
 
+## Example Usage
+
+Let's say you have your own repository named `myasr` and want to test this package. A simple way to do it would be to clone this repo inside your repository and then install it. An alternative would be to add this project as a submodule to your git repo which will make it easier for you to pull changes. Example (assuming you are in an already existing python venv):
+
+```bash
+# Add a submodule with the name `cl`
+git submodule add git@github.com:aalto-speech/speechbrain-cl.git cl
+# (Optional) You will probably also have to pull from the submodule:
+git submodule update --init --recursive
+# Install submodule
+python -m pip install -e cl
+# You can now either import the package or use its CLI:
+cl --help  # print help message
+```
+
+Now if you want to update the package:
+
+```bash
+git submodule update --remote --merge
+# Check if everything went fine and that the installation still works
+python -m pip install -e cl
+```
+
 ## Available CL methods
 
 - **Metric-based**: The training set is sorted based on the results of a metric (e.g. WER or CER). By default we use the same model that we are trying to train in order to extract these values.
