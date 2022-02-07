@@ -1,5 +1,20 @@
 # Curriculum Learning Methods for Speechbrain
 
+## Installation
+
+*Has only been tested on linux systems.*
+
+```bash
+# Clone repository
+git clone git@github.com:aalto-speech/speechbrain-cl.git
+# Create a virtual environment
+python -m venv env
+# Source environment
+source ./env/bin/activate
+# Install package in editable mode
+python -m pip install -e .
+```
+
 ## Available CL methods
 
 - **Metric-based**: The training set is sorted based on the results of a metric (e.g. WER or CER). By default we use the same model that we are trying to train in order to extract these values.
