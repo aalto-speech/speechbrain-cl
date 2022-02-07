@@ -90,10 +90,8 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR_Aku):
     do_fixed_sort_flag = True
     if hparams['sorting'] not in CurriculumDataset.CURRICULUM_KEYS:
         do_fixed_sort_flag = False
-        pass
     elif "pretrained_model_hparams" not in hparams:
         do_fixed_sort_flag = False
-        pass
     elif asr_brain.checkpointer.find_checkpoint() is None:
         assert os.path.isfile(hparams["pretrained_model_hparams"])
         _save_folder = os.path.join(hparams['output_folder'], "curriculum_logs")

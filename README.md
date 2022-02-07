@@ -11,7 +11,7 @@
 ### CL sub-methods:
 
 - **Transfer CL**: The training set is sorted based on an already trained model, but the sortings may change, depending on the performance on the currently training model. The new sortings will be taken by using one of the basic CL methods discussed above.
-- **Transfer-fixed CL**: Same as above, except that the sortings never change.
+- **Transfer-fixed CL**: Same as above, except that the sortings never change (this is advised).
 - **Subsample CL**: Every `N` epochs (`N` is a hyperparameter) a provided percentage of the training set is sampled and used for training for the next `N` epochs. The order of the training set is determined by using either transfer CL or any of the standard methods.
 - **Subsample-incremental CL**: Same as above, but every `N` epochs we also increase the percentage of the training set that we are going to use for training.
 - **Noisy CL**: Can we used with any of the above methods (except *No sorting* and *Duration-based*). It separates the training set into three categories: easy, medium-level and hard examples (the distinction happens by usign the sortings provided from the methods above). It then procceeds to add some hard and medium-level examples among the easy ones. This has helped with overfitting issues.

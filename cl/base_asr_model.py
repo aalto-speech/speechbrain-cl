@@ -106,9 +106,9 @@ class BaseASR(sb.core.Brain, ABC):
             try:
                 self.final_sortings = self.load_sorting_dict(epoch=0, inplace=False)
                 logger.info(f"Loaded dictionary with final sortings. Length: {len(self.final_sortings)}.")
-            except ValueError:
+            except AssertionError:
                 logger.warning(f"{'='*80}\nCould not find a sorting dictionary even though you are using\
-                     fixed transfer cl. This could lead to issues.\n{'='*80}")
+                    fixed transfer cl. This could lead to issues.\n{'='*80}")
 
     @property
     def do_subsample(self):
@@ -483,6 +483,7 @@ class BaseASR(sb.core.Brain, ABC):
                     self.train_subset,
                     sorting_dict_save_path=curr_log_path,
                     update_final_dict=not self.use_fixed_sorting,
+                    ckpt_prefix="not-training-",
                 )
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \
@@ -617,6 +618,7 @@ class BaseASR(sb.core.Brain, ABC):
         sorting_dict_save_path: Optional[str] = None, 
         progressbar: Optional[bool] = None,
         update_final_dict: bool = True,
+        ckpt_prefix: str = "dataloader-",
     ):
         """ Create and return a curriculum dictionary based on the current checkpoint.
             Loads a checkpoint and iterates the train set for one epoch in order to 
@@ -644,7 +646,7 @@ class BaseASR(sb.core.Brain, ABC):
             train_set = self.make_dataloader(
                 train_set, 
                 stage=sb.Stage.TRAIN, 
-                ckpt_prefix="not-training-",
+                ckpt_prefix=ckpt_prefix, #"not-training-",
                 **self.train_loader_kwargs
             )
         # Load a checkpoint if we previously stopped midway
