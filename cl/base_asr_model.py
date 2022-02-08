@@ -651,10 +651,12 @@ class BaseASR(sb.core.Brain, ABC):
             )
         # Load a checkpoint if we previously stopped midway
         if self.checkpointer is not None:
+            old_epoch = self.hparams.epoch_counter.current
             self.checkpointer.recover_if_possible(
                 importance_key=self.ckpt_importance_key,
                 device=torch.device(self.device)
             )
+            self.hparams.epoch_counter.current = old_epoch
         # self.checkpointer.recover_if_possible(device=torch.device(self.device))
         self.sorting_dict = {}
         if self.use_fixed_sorting:

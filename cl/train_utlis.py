@@ -51,7 +51,7 @@ from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import run_on_main
 import webdataset as wds
 
-from cl.asr_models import ASR_Aku, ASR, AsrWav2Vec2
+from cl.asr_models import ASR, ASR_Old, AsrWav2Vec2
 from cl.curriculum import CurriculumDataset
 from cl.filelist_tokenizer import FileListTokenizer
 from cl.utils import normalize_text, strip_spaces
@@ -62,7 +62,7 @@ from cl.vad import testset_pipeline_with_segments
 logger = logging.getLogger(__name__)
 
 
-def fit(hparams, run_opts, overrides, ASR_Model=ASR_Aku):
+def fit(hparams, run_opts, overrides, ASR_Model=ASR):
 
     # Create the datasets objects as well as tokenization and encoding :-D
     if hparams.get("use_shards", False):

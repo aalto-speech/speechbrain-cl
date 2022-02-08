@@ -47,7 +47,7 @@ def checkpoint_wrapper_cl(func):
                 # Keep the same old epoch
                 brain.hparams.epoch_counter.current = old_epoch
                 brain._loaded_checkpoint = True
-            brain.hparams.epoch_counter.current += 1
+            # brain.hparams.epoch_counter.current += 1
         return dataloader
     return recover_if_applicable
 
