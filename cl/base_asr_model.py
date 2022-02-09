@@ -422,7 +422,13 @@ class BaseASR(sb.core.Brain, ABC):
             loss = self._loss_curriculum_update(stage, batch, loss, predictions)
         return loss
 
-    def subsample_trainset(self, percentage=None, increase_factor=None):
+    def subsample_trainset(
+      self, 
+      percentage: Optional[float] = None, 
+      increase_factor: Optional[float] = None,
+      increase_type: Optional[str] = "additive",
+      step_length: Optional[int] = 10,
+    ):
         assert self.hparams.do_subsample is True
         if not isinstance(percentage, float):
             percentage = getattr(self.hparams, 'subsampling_percentage', 0.3)
@@ -435,8 +441,16 @@ class BaseASR(sb.core.Brain, ABC):
             'curriculum_logs', 
             f"{self.dict_log_prefix}{self.sorting}_dict-epoch={dummy_epoch}.log"
         )
-        if isinstance(increase_factor, float) and increase_factor > 0.0:
-            percentage = round(min(1.0, percentage+(increase_factor)*(dummy_epoch-1)), 2)
+        if isinstance(increase_factor, float) and increase_factor > 0:
+            if increase_type in ['additive', '+']:
+                percentage = round(min(1.0, percentage+(increase_factor)*(dummy_epoch-1)), 4)
+            elif increase_type in ['multiplicative', '*', "exp", "exponential"]:
+                # E.g. if initial percentage is 0.1, increase_factor=1.5 and step_length=10
+                #      on 1st epoch: percentage *= 1.5^(0/5) = 0.1*1 = 0.1
+                #      on 5th epoch: percentage *= 1.5^(4/5) = 0.1*1.383 = 0.12
+                #      on 30th epoch: percentage *= 1.5^(29/5) = 0.1*10.5 = 1.05 -> 1.0
+                assert increase_factor > 1, "Multiplicative should be above 1 since eitherwise the trainset will get shrinked to 0"
+                percentage = round(min(1, percentage*increase_factor**((dummy_epoch-1)/step_length)), 4)
             suffix = f"percentage={percentage}"
         else:
             suffix = f"epoch={dummy_epoch}"
