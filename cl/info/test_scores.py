@@ -18,9 +18,12 @@ def main(res_dir, metrics=DEFAULT_METRICS):
 
     """
     if isinstance(res_dir, list) and len(res_dir) > 1:
-        log_paths = []
-        for p in res_dir:
-            log_paths += glob.glob(os.path.join(p, "*", "log.txt"))
+        if res_dir[0].endswith("log.txt"):
+            log_paths = res_dir
+        else:
+            log_paths = []
+            for p in res_dir:
+                log_paths += glob.glob(os.path.join(p, "*", "log.txt"))
     elif isinstance(res_dir, str):
         assert os.path.isdir(res_dir), res_dir
         log_paths = glob.glob(os.path.join(res_dir, "*", "*", "log.txt"))

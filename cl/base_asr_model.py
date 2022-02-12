@@ -252,10 +252,14 @@ class BaseASR(sb.core.Brain, ABC):
             logger.info("`do_subsample` is True.")
             percentage = getattr(self.hparams, 'subsampling_percentage', 0.3)
             increase_factor = getattr(self.hparams, 'subsampling_increase_factor', None)
+            increase_type = getattr(self.hparams, 'subsampling_increase_type', 'additive')
+            step_length = getattr(self.hparams, 'subsampling_step_length', 5)
             logger.info(f"On stage start: Before subsample. Type of train_set: {type(self.train_set)}.")
             sub_dataloader = self.subsample_trainset(
                 percentage=percentage,
                 increase_factor=increase_factor,
+                increase_type=increase_type,
+                step_length=step_length,
             )
             logger.info(f"On stage start: After subsample. Type of train_set: {type(self.train_set)}.")
             if sub_dataloader is not None:
