@@ -31,6 +31,7 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     model_to_stats = {}
     n_models = 0
     max_epoch = 0
+    min_wer = 200
     for path in paths:
         try:
             epochs, _, _, valid_metrics_dict = _read_stats([path], [metric])
@@ -41,10 +42,23 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         tmp = max(map(lambda x: int(x[0]), epochs))
         if tmp > max_epoch:
             max_epoch = tmp
+        tmp_min = min(map(lambda w: float(w[0]), valid_metrics_dict[metric]))
+        if tmp_min < min_wer:
+            min_wer = tmp_min
         model_to_stats[path] = [epochs, valid_metrics_dict]
     assert n_models <= len(MPL_COLORS), f"You will need to rotate the MPL_COLORS list. {epochs=}"
     random.shuffle(MPL_COLORS)
+    step = 1
+    start_epoch = 0
+    if max_epoch > 50:
+        step = 10
+        start_epoch = 15  # first epoch to plot
+    elif max_epoch > 20:
+        step = 5
+    elif max_epoch > 15:
+        step = 2
 
+    max_allowed_wer = 70
     random_colors = (MPL_COLORS * round(n_models/len(MPL_COLORS) + 0.5))[:n_models]
     fig = plt.figure(figsize=(16, 12))
     fig.suptitle('Model Performances', fontsize=25)
@@ -52,21 +66,26 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     x_axis = list(range(1, max_epoch+1))
     for i, path in enumerate(model_to_stats):
         epochs, valid_metrics_dict = model_to_stats[path]
-        best_valid_epoch, best_valid_wer = _find_best_epoch(epochs, valid_metrics_dict)
-        identifier = os.path.basename(os.path.dirname(os.path.dirname(path)))
-        vms = [vm[0] for vm in valid_metrics_dict[metric]]
+        best_valid_epoch, best_valid_wer = _find_best_epoch(epochs, valid_metrics_dict, metric=metric)
+        model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        seed = os.path.basename(os.path.dirname(path)).split("-")[0]
+        identifier = f"{model_id} ({seed})"
+        vms = [min(100, vm[0]) for vm in valid_metrics_dict[metric]]
         # if len(vms) < max_epoch:
         #     vms += [vms[-1]] * (max_epoch-len(vms))
         x_axis = [int(e[0]) for e in epochs]
         best_epoch_index = [ind for ind, x in enumerate(x_axis) if int(x) == best_valid_epoch][0]
         vm_best_wer = [y for ind, y in enumerate(vms) if ind == best_epoch_index][0]
+        vm_best_wer = min(max_allowed_wer, vm_best_wer)
         plt.plot(x_axis, vms, linewidth=4, label=f"{identifier}", color=random_colors[i])
         plt.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
         plt.plot([best_valid_epoch], [vm_best_wer], 'o', ms=14, color=random_colors[i])
-        plt.xticks(list(range(1, max_epoch+1)))
+        plt.xticks(list(range(0, max_epoch+1, step)))
         plt.legend(loc='upper right')
         plt.xlabel("Epoch")
         plt.ylabel(f"Metric {metric}")
+        plt.xlim([start_epoch, max_epoch + step])
+        plt.ylim([min_wer-5, max_allowed_wer])
     fig.tight_layout()
     if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
         print("Showing final plot...")
@@ -134,7 +153,7 @@ def plot_logs(paths, metrics=["PER"], output_path=None, print_seed=False):
         print("Saving plot under:", output_path)
         plt.savefig(output_path)
 
-def _testset_boxplot_single(wer_file, model_name=None, max_allowed_score=250.0):
+def _testset_boxplot_single(wer_file, model_name=None, max_allowed_score=250.0, metric="WER"):
     wer_lines = read_single(wer_file, print_stats=False)
     ins, dels, subs = [], [], []
     changes = []
@@ -150,7 +169,7 @@ def _testset_boxplot_single(wer_file, model_name=None, max_allowed_score=250.0):
     # print(f"{model_name}: \t\t\tInsertions={int(sum(ins))}, Deletions={int(sum(dels))}, Substitutions={int(sum(subs))}.")
     with open(wer_file, 'r') as f:
         l = f.readlines()[0]
-        wer = float(l.split("WER")[1].split("[")[0].strip())
+        wer = float(l.split(metric)[1].split("[")[0].strip())
     print(f"| {wer_file.split('seq2seq/')[1]}\t|\t{wer}\t|\t{int(sum(ins))}\t|\t{int(sum(dels))}\t|\t{int(sum(subs))}\t|")
     
     return changes

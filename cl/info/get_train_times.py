@@ -10,7 +10,10 @@ def get_train_times(log_txt_pattern, silent=False):
     model_to_times = {}
     iterator = _get_iterator(log_txt_pattern)
     for path in iterator:
-        identifier = os.path.dirname(os.path.dirname(path))
+        model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        seed = os.path.basename(os.path.dirname(path)).split("-")[0]
+        identifier = f"{model_id} ({seed})"
+        # identifier = os.path.dirname(os.path.dirname(path))
         with open(path, 'r') as f:
             epoch, mins = None, None
             minutes_per_epoch = {}
@@ -34,12 +37,12 @@ def get_train_times(log_txt_pattern, silent=False):
             raise NoEpochsTrained(msg)
         total_time = max(minutes_per_epoch.values()) / 60  # to hours
         model_to_times[identifier] = minutes_per_epoch
-        print("Model {} took: \t\t {} hours (epochs={})".format(identifier, total_time, max(minutes_per_epoch.keys())))
+        print("Model {} took: \t\t {} hours (epochs={})".format(identifier, total_time, len(set(minutes_per_epoch.keys()))))
     return model_to_times
 
 def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     model_to_times = get_train_times(log_txt_pattern, silent)
-    model_to_best_val = _get_best_epoch(log_txt_pattern)
+    model_to_best_val = _get_best_epoch(log_txt_pattern, silent)
     n_models = len(model_to_times)
     fig = plt.figure(figsize=(20, 14))
     fig.suptitle('Train Times', fontsize=25)
@@ -69,22 +72,31 @@ def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     print("Saving plot under:", os.path.abspath(out_path))
     plt.savefig(out_path)
 
-def _get_best_epoch(log_txt_pattern):
+def _get_best_epoch(log_txt_pattern, silent=False):
     paths = _get_iterator(log_txt_pattern)
     model_to_best_val = {}
     for path in paths:
-        epochs, _, _, valid_metrics_dict = _read_stats([path])
-        model_name = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        try:
+            epochs, _, _, valid_metrics_dict = _read_stats([path])
+        except NoEpochsTrained as e:
+            if silent:
+                continue
+            else:
+                raise e
+        model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        seed = os.path.basename(os.path.dirname(path)).split("-")[0]
+        model_name = f"{model_id} ({seed})"
+        # model_name = os.path.basename(os.path.dirname(os.path.dirname(path)))
         best_valid_epoch, best_valid_wer = _find_best_epoch(epochs, valid_metrics_dict)
         model_to_best_val[model_name] = (int(best_valid_epoch), float(best_valid_wer))
     return model_to_best_val
 
-def _find_best_epoch(epochs, valid_metrics_dict):
+def _find_best_epoch(epochs, valid_metrics_dict, metric="WER"):
     best_valid_index = 0
-    for i in range(1, len(valid_metrics_dict['WER'])):
-        if valid_metrics_dict['WER'][i][0] < valid_metrics_dict['WER'][best_valid_index][0]:
+    for i in range(1, len(valid_metrics_dict[metric])):
+        if valid_metrics_dict[metric][i][0] < valid_metrics_dict[metric][best_valid_index][0]:
             best_valid_index = i
-    best_valid_wer = valid_metrics_dict['WER'][best_valid_index][0]
+    best_valid_wer = valid_metrics_dict[metric][best_valid_index][0]
     best_valid_epoch = [epochs[i][0] for i in range(len(epochs)) if i==best_valid_index][0]
     return int(best_valid_epoch), float(best_valid_wer)
 

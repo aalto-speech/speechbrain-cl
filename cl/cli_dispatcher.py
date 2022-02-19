@@ -4,6 +4,7 @@ import argparse
 from .info.visualize import testset_boxplot_comparison, plot_logs_dispatcher
 from .info.statmd import get_args, statmd, _add_parser_args
 from .info.get_train_times import main as get_train_times
+from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -34,6 +35,24 @@ def dispatch():
             to the wer_test.txt files that don't exist."
     )
     wer_bp_parser.set_defaults(func=testset_boxplot_comparison)
+
+    # ============================================
+    # ============ PRINT TEST STATS ==============
+    # ============================================
+    testwer_parser = subparsers.add_parser(
+        "testwer", aliases=["tw"], help = "Print wer scores on the test set with the ability to make a barplot."
+    )
+    testwer_parser = test_wer_parser(testwer_parser)
+    def testwer_func(args):
+        if args.wer_suffix is None:
+            if args.vad:
+                args.wer_suffix = "wer_test_vadded.txt"
+            elif args.forced_segmented:
+                args.wer_suffix = "wer_test_forced_segmented.txt"
+            else:
+                args.wer_suffix = "wer_test.txt"
+        read_wer_test(args.exps, args.wer_suffix, args.out_path)
+    testwer_parser.set_defaults(func=testwer_func)
 
     # ============================================
     # ======= PRINT TRAIN/DEV/TEST STATS =========
