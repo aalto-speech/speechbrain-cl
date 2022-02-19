@@ -1,3 +1,4 @@
+import copy
 import logging
 import time
 import random
@@ -382,8 +383,9 @@ class CurriculumSubset(CurriculumDataset):
     def __init__(self, dataset: CurriculumDataset, indices: Sequence[int], *args, **kwargs) -> None:
         self.dataset = dataset
         self.indices = indices
-        # logger.info(f"{dataset.data=}")
         super().__init__(data=dataset.data, *args, **kwargs)
+        self.pipeline = copy.deepcopy(dataset.pipeline)
+        # logger.info(f"{dataset.data=}")
 
     def __getitem__(self, idx):
         if isinstance(idx, list):

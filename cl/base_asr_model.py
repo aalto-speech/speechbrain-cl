@@ -43,6 +43,7 @@ YamlTupleSafeLoader.add_constructor(
 @sb.utils.checkpoints.register_checkpoint_hooks
 class BaseASR(sb.core.Brain, ABC):
 
+    DURATION_CL_KEYS = ['ascending', 'descending']
     VALID_CL_KEYS = ['ascending', 'descending', 'random']  + CurriculumDataset.CURRICULUM_KEYS
 
     def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
@@ -460,6 +461,9 @@ class BaseASR(sb.core.Brain, ABC):
             suffix = f"percentage={percentage}"
         else:
             suffix = f"epoch={dummy_epoch}"
+        log_dir = os.path.join(self.hparams.output_folder, 'curriculum_logs')
+        if not os.path.isdir(log_dir):
+            os.makedirs(log_dir)
         subset_ids_path = os.path.join(
             self.hparams.output_folder,
             'curriculum_logs',
@@ -501,22 +505,30 @@ class BaseASR(sb.core.Brain, ABC):
                 self.sorting_dict = {k: self.final_sortings[k] for k in self.train_subset.data_ids}
             else:
                 logger.info("We are going to create a new sorting dictionary.")
-                self.sorting_dict = self.create_curriculum_dict(
-                    self.train_subset,
-                    sorting_dict_save_path=curr_log_path,
-                    update_final_dict=not self.use_fixed_sorting,
-                    ckpt_prefix="not-training-",
-                )
+                if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
+                    self.sorting_dict = self.create_curriculum_dict(
+                        self.train_subset,
+                        sorting_dict_save_path=curr_log_path,
+                        update_final_dict=not self.use_fixed_sorting,
+                        ckpt_prefix="not-training-",
+                    )
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \
                 {len(shuffled_train_ids)} datapoints (out of {len(self.train_set)})."))
         self.train_subset.pipeline = self.train_set.pipeline
-        train_set = self.train_subset.filtered_sorted(
-            sort_key=self.sorting,
-            sorting_dict=self.sorting_dict,
-            reverse=getattr(self.hparams, "reverse", False),
-            noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
-        )
+        if self.sorting in BaseASR.DURATION_CL_KEYS:
+            logger.info("Duration-based sorting + subsampling. This implies that the `noisy` CL method cannot be used.")
+            train_set = self.train_subset.filtered_sorted(
+                sort_key="duration",
+                reverse=True if self.sorting == "descending" else False,
+            )
+        else:
+            train_set = self.train_subset.filtered_sorted(
+                sort_key=self.sorting,
+                sorting_dict=self.sorting_dict,
+                reverse=getattr(self.hparams, "reverse", False),
+                noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
+            )
         dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
         if not self.use_fixed_sorting:
             self.final_sortings = {}
