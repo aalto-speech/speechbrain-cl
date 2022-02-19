@@ -107,8 +107,10 @@ class BaseASR(sb.core.Brain, ABC):
                 self.final_sortings = self.load_sorting_dict(epoch=0, inplace=False)
                 logger.info(f"Loaded dictionary with final sortings. Length: {len(self.final_sortings)}.")
             except AssertionError:
-                logger.warning(f"{'='*80}\nCould not find a sorting dictionary even though you are using\
-                    fixed transfer cl. This could lead to issues.\n{'='*80}")
+                if self.hparams.epoch_counter.current > 0:
+                    # Only warn after the first epoch
+                    logger.warning(strip_spaces(f"{'='*80}\nCould not find a sorting dictionary even though you are using\
+                        fixed transfer cl. This could lead to issues.\n{'='*80}"))
 
     @property
     def do_subsample(self):
@@ -449,7 +451,7 @@ class BaseASR(sb.core.Brain, ABC):
             if increase_type in ['additive', '+']:
                 percentage = round(min(1.0, percentage+(increase_factor)*(dummy_epoch-1)), 4)
             elif increase_type in ['multiplicative', '*', "exp", "exponential"]:
-                # E.g. if initial percentage is 0.1, increase_factor=1.5 and step_length=10
+                # E.g. if initial percentage is 0.1, increase_factor=1.5 and step_length=5
                 #      on 1st epoch: percentage *= 1.5^(0/5) = 0.1*1 = 0.1
                 #      on 5th epoch: percentage *= 1.5^(4/5) = 0.1*1.383 = 0.12
                 #      on 30th epoch: percentage *= 1.5^(29/5) = 0.1*10.5 = 1.05 -> 1.0
@@ -465,8 +467,10 @@ class BaseASR(sb.core.Brain, ABC):
         )
         def get_train_subset(shuffled_train_ids):
             if isinstance(self.train_set, FilteredSortedDynamicItemDataset):
-                logger.warning(f"Using curriculum subset for filteredsorted dataset. ERROR?")
-                train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
+                # logger.warning(f"Using curriculum subset for filteredsorted dataset. ERROR?")
+                # train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
+                shuffled_train_ids = [self.train_set.data_ids[i] for i in shuffled_train_ids]
+                train_subset = FilteredSortedDynamicItemDataset(self.train_set, shuffled_train_ids)
             elif isinstance(self.train_set, DataLoader):
                 # For random sorting
                 raise NotImplementedError(f"Cannot subsample a dataloader train set of type {type(self.train_set)} ({self.sorting=}).")
