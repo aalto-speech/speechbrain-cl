@@ -10,7 +10,7 @@ import numpy as np
 from .statmd import NoEpochsTrained, _read_stats, get_args, _read_args
 from .find_anomalies import read_single
 from .get_train_times import _find_best_epoch
-from cl.info.globals import MPL_COLORS, MAPPINGS
+from cl.info.globals import MPL_COLORS, MAPPINGS, MPL_MARKERS
 
 
 plt.rcParams.update({'font.size': 19})
@@ -46,8 +46,11 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         if tmp_min < min_wer:
             min_wer = tmp_min
         model_to_stats[path] = [epochs, valid_metrics_dict]
-    assert n_models <= len(MPL_COLORS), f"You will need to rotate the MPL_COLORS list. {epochs=}"
     random.shuffle(MPL_COLORS)
+    random.shuffle(MPL_MARKERS)
+    # MPL_COLORS = MPL_COLORS*(1+n_models//len(MPL_COLORS))[:n_models]
+    # MPL_MARKERS = MPL_MARKERS*(1+n_models//len(MPL_MARKERS))[:n_models]
+    # assert n_models <= len(MPL_COLORS), f"You will need to rotate the MPL_COLORS list. {epochs=}"
     step = 1
     start_epoch = 0
     if max_epoch > 50:
@@ -59,7 +62,8 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         step = 2
 
     max_allowed_wer = 70
-    random_colors = (MPL_COLORS * round(n_models/len(MPL_COLORS) + 0.5))[:n_models]
+    random_colors = (MPL_COLORS * (1+n_models//len(MPL_COLORS)))[:n_models]
+    random_markers = (MPL_MARKERS * (1+n_models//len(MPL_MARKERS)))[:n_models]
     fig = plt.figure(figsize=(16, 12))
     fig.suptitle('Model Performances', fontsize=25)
     plt.title(f"Model Performances on Validation Set")
@@ -77,9 +81,9 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         best_epoch_index = [ind for ind, x in enumerate(x_axis) if int(x) == best_valid_epoch][0]
         vm_best_wer = [y for ind, y in enumerate(vms) if ind == best_epoch_index][0]
         vm_best_wer = min(max_allowed_wer, vm_best_wer)
-        plt.plot(x_axis, vms, linewidth=4, label=f"{identifier}", color=random_colors[i])
+        plt.plot(x_axis, vms, marker=random_markers[i], linewidth=4, label=f"{identifier}", color=random_colors[i])
         plt.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
-        plt.plot([best_valid_epoch], [vm_best_wer], 'o', ms=14, color=random_colors[i])
+        plt.plot([best_valid_epoch], [vm_best_wer], random_markers[i], ms=14, color=random_colors[i])
         plt.xticks(list(range(0, max_epoch+1, step)))
         plt.legend(loc='upper right')
         plt.xlabel("Epoch")
