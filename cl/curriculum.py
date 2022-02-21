@@ -383,7 +383,7 @@ class CurriculumSubset(CurriculumDataset):
     def __init__(self, dataset: CurriculumDataset, indices: Sequence[int], *args, **kwargs) -> None:
         self.dataset = dataset
         self.indices = indices
-        super().__init__(data=dataset.data, *args, **kwargs)
+        # super().__init__(data=dataset.data, *args, **kwargs)
         self.pipeline = copy.deepcopy(dataset.pipeline)
         # logger.info(f"{dataset.data=}")
 

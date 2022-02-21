@@ -108,7 +108,7 @@ class BaseASR(sb.core.Brain, ABC):
                 self.final_sortings = self.load_sorting_dict(epoch=0, inplace=False)
                 logger.info(f"Loaded dictionary with final sortings. Length: {len(self.final_sortings)}.")
             except AssertionError:
-                if self.hparams.epoch_counter.current > 0:
+                if self.current_epoch > 0:
                     # Only warn after the first epoch
                     logger.warning(strip_spaces(f"{'='*80}\nCould not find a sorting dictionary even though you are using\
                         fixed transfer cl. This could lead to issues.\n{'='*80}"))
@@ -116,6 +116,24 @@ class BaseASR(sb.core.Brain, ABC):
     @property
     def do_subsample(self):
         return getattr(self.hparams, 'do_subsample', False)
+    
+    @property
+    def curriculum_update_every(self):
+        return getattr(self.hparams, 'curriculum_update_every', None) or 1
+    
+    @property
+    def current_epoch(self):
+        return self.hparams.epoch_counter.current
+    
+    @current_epoch.setter
+    def current_epoch(self, value):
+        self.hparams.epoch_counter.current = value
+
+    @property
+    def current_trainset(self):
+        if self.do_subsample and hasattr(self, 'train_subset'):
+            return self.train_subset
+        return self.train_set
     
     # Abstract methods MUST be implemented by the user.
     @abstractmethod
@@ -244,6 +262,20 @@ class BaseASR(sb.core.Brain, ABC):
                 self.train_set = self.make_random_dataloader()
             # logger.info(f"On stage start: After random. Type of train_set: {type(self.train_set)}.")
             return self.train_set
+
+        
+        if (self.current_epoch % self.curriculum_update_every) > 0 and \
+            (self.sorting in CurriculumDataset.CURRICULUM_KEYS) and \
+            (len(self.current_trainset) > 0) and (len(self.sorting_dict) > 0):
+            logger.info(f"Skipping trainset re-ordering.")
+            train_set = self.current_trainset.filtered_sorted(
+                sort_key=self.sorting,
+                sorting_dict=self.sorting_dict,
+                reverse=getattr(self.hparams, "reverse", False),
+                noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
+            )
+            dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
+            return dataloader
 
         
         # ############################################################
@@ -384,7 +416,7 @@ class BaseASR(sb.core.Brain, ABC):
         if stage == sb.Stage.TRAIN:
             if self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []):
                 self._loaded_checkpoint = False
-                if self.hparams.epoch_counter.current+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
+                if self.current_epoch+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
                     # E.g. if we are on epoch 1 and `default_sorting_epochs` is 2, then 
                     # the sorting_dict will be empty.
                     # But, if we are on epoch 2 and `default_sorting_epochs` is 2, then
@@ -441,8 +473,7 @@ class BaseASR(sb.core.Brain, ABC):
             percentage = getattr(self.hparams, 'subsampling_percentage', 0.3)
         # After how many epochs should we update the train set
         update_every = getattr(self.hparams, 'subsampling_n_epochs', 5)
-        current_epoch = self.hparams.epoch_counter.current
-        dummy_epoch = current_epoch//update_every + 1
+        dummy_epoch = self.current_epoch//update_every + 1
         curr_log_path = os.path.join(
             self.hparams.output_folder, 
             'curriculum_logs', 
@@ -458,6 +489,7 @@ class BaseASR(sb.core.Brain, ABC):
                 #      on 30th epoch: percentage *= 1.5^(29/5) = 0.1*10.5 = 1.05 -> 1.0
                 assert increase_factor > 1, "Multiplicative should be above 1 since eitherwise the trainset will get shrinked to 0"
                 percentage = round(min(1, percentage*increase_factor**((dummy_epoch-1)/step_length)), 4)
+                logger.info(f"Subsampling using {percentage}% of the training set.")
             suffix = f"percentage={percentage}"
         else:
             suffix = f"epoch={dummy_epoch}"
@@ -497,7 +529,7 @@ class BaseASR(sb.core.Brain, ABC):
             shuffled_train_ids = np.random.permutation(len(self.train_set))[:round(percentage*len(self.train_set))]
             self.train_subset = get_train_subset(shuffled_train_ids)
             assert hasattr(self.train_subset, 'filtered_sorted'), f"{type(self.train_subset)=}"
-            if current_epoch == 1 and len(self.sorting_dict) > 0:
+            if self.current_epoch == 1 and len(self.sorting_dict) > 0:
                 logger.info(f"Selecting {len(shuffled_train_ids)} random ids.")
                 self.sorting_dict = {k: self.sorting_dict[k] for k in self.train_subset.data_ids}
             elif self.use_fixed_sorting and len(self.final_sortings) > len(self.sorting_dict):
@@ -545,8 +577,7 @@ class BaseASR(sb.core.Brain, ABC):
         """
         if stage != sb.Stage.TRAIN:
             return False
-        current_epoch = self.hparams.epoch_counter.current
-        return current_epoch <= self.hparams.number_of_ctc_epochs
+        return self.current_epoch <= self.hparams.number_of_ctc_epochs
 
     def prepare_features(self, stage, wavs, ids=None):
         """Prepare features for computation on-the-fly
@@ -685,14 +716,16 @@ class BaseASR(sb.core.Brain, ABC):
             )
         # Load a checkpoint if we previously stopped midway
         if self.checkpointer is not None:
-            old_epoch = self.hparams.epoch_counter.current
+            old_epoch = self.current_epoch
             self.checkpointer.recover_if_possible(
                 importance_key=self.ckpt_importance_key,
                 device=torch.device(self.device)
             )
-            self.hparams.epoch_counter.current = old_epoch
+            self.current_epoch = old_epoch
         # self.checkpointer.recover_if_possible(device=torch.device(self.device))
         self.sorting_dict = {}
+        # Time since last intra-epoch checkpoint
+        last_ckpt_time = time.time()
         if self.use_fixed_sorting:
             logger.info(f"Will process {len(train_set.dataset)} data points from transfer learning CL.")
         with tqdm(
@@ -716,21 +749,21 @@ class BaseASR(sb.core.Brain, ABC):
                 if self.debug and self.step == self.debug_batches:
                     break
 
-                # if (
-                #     self.checkpointer is not None
-                #     and self.ckpt_interval_minutes > 0
-                #     and time.time() - last_ckpt_time
-                #     >= self.ckpt_interval_minutes * 60.0
-                # ):
-                #     # This should not use run_on_main, because that
-                #     # includes a DDP barrier. That eventually leads to a
-                #     # crash when the processes'
-                #     # time.time() - last_ckpt_time differ and some
-                #     # processes enter this block while others don't,
-                #     # missing the barrier.
-                #     if sb.utils.distributed.if_main_process():
-                #         self._save_intra_epoch_ckpt()
-                #     last_ckpt_time = time.time()
+                if (
+                    self.checkpointer is not None
+                    and self.ckpt_interval_minutes > 0
+                    and time.time() - last_ckpt_time
+                    >= self.ckpt_interval_minutes * 60.0
+                ):
+                    # This should not use run_on_main, because that
+                    # includes a DDP barrier. That eventually leads to a
+                    # crash when the processes'
+                    # time.time() - last_ckpt_time differ and some
+                    # processes enter this block while others don't,
+                    # missing the barrier.
+                    if sb.utils.distributed.if_main_process():
+                        self._save_intra_epoch_ckpt()
+                    last_ckpt_time = time.time()
         # assert len(self.sorting_dict) == len(self.train_set), f"{len(self.sorting_dict)=}, {len(self.train_set)=}"
         dataset = self.train_subset if self.do_subsample and hasattr(self, 'train_subset') else self.train_set
         assert len(self.sorting_dict) == len(dataset), f"{len(self.sorting_dict)=}, {len(dataset)=}"
@@ -838,7 +871,7 @@ class BaseASR(sb.core.Brain, ABC):
 
     def _metric_curriculum_update(self, stage, batch, loss, predictions, sorting_method=None):
         sorting_method = sorting_method or self.sorting
-        if stage != sb.Stage.TRAIN or self.hparams.epoch_counter.current+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
+        if stage != sb.Stage.TRAIN or self.current_epoch+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
             return loss
         if not hasattr(self, 'tokenizer'):
             raise AttributeError("Expected 'tokenizer' to exist for Metric-based Curriculum Learning."\
@@ -883,7 +916,7 @@ class BaseASR(sb.core.Brain, ABC):
         return loss
 
     def _loss_curriculum_update(self, stage, batch, losses, predictions, sorting_method=None):
-        if stage != sb.Stage.TRAIN or self.hparams.epoch_counter.current+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
+        if stage != sb.Stage.TRAIN or self.current_epoch+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
             return self._mean_redact(losses, batch)
         sorting_method = sorting_method or self.sorting
         assert len(losses) == len(batch.id)
@@ -1018,7 +1051,7 @@ class BaseASR(sb.core.Brain, ABC):
             save_dict = {"step": self.step, "avg_train_loss": self.avg_train_loss,}
         if not self.sorting_dict_needs_save:
             pass
-        elif self.hparams.epoch_counter.current <= self.hparams.number_of_curriculum_epochs and \
+        elif self.current_epoch <= self.hparams.number_of_curriculum_epochs and \
               (isinstance(self.sorting_dict, dict) and len(self.sorting_dict) > 0):
             #   (self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []))):
             # ###############################################
