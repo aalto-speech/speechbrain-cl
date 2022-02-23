@@ -5,6 +5,7 @@ from .info.visualize import testset_boxplot_comparison, plot_logs_dispatcher
 from .info.statmd import get_args, statmd, _add_parser_args
 from .info.get_train_times import main as get_train_times
 from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
+from .info.find_anomalies import _parse_args as test_anomalies, _get_parser as test_anomalies_parser
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -43,15 +44,27 @@ def dispatch():
         "testwer", aliases=["tw"], help = "Print wer scores on the test set with the ability to make a barplot."
     )
     testwer_parser = test_wer_parser(testwer_parser)
+    testwer_parser = test_anomalies_parser(testwer_parser)
+    testwer_parser.add_argument(
+        "--find-anomalies", "-fa", action="store_true", default=False,
+        help="If provided then we are going to try to find anomalies in\
+            the provided wer_test*.txt or cer_test*.txt files and compare them\
+            if the --compare option is also provided."
+    )
     def testwer_func(args):
+        if args.find_anomalies:
+            return test_anomalies(args)
         if args.wer_suffix is None:
             if args.vad:
-                args.wer_suffix = "wer_test_vadded.txt"
+                args.wer_file = "wer_test_vadded.txt"
             elif args.forced_segmented:
-                args.wer_suffix = "wer_test_forced_segmented.txt"
+                args.wer_file = "wer_test_forced_segmented.txt"
             else:
-                args.wer_suffix = "wer_test.txt"
-        read_wer_test(args.exps, args.wer_suffix, args.out_path)
+                args.wer_file = "wer_test.txt"
+        else:
+            args.wer_file = f"wer_test{args.wer_suffix}.txt"
+        print(args)
+        read_wer_test(args.exps, args.wer_file, args.out_path)
     testwer_parser.set_defaults(func=testwer_func)
 
     # ============================================

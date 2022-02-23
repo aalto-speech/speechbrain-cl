@@ -67,9 +67,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.wer_suffix is None:
         if args.vad:
-            args.wer_suffix = "wer_test_vadded.txt"
+            args.wer_file = "wer_test_vadded.txt"
         elif args.forced_segmented:
-            args.wer_suffix = "wer_test_forced_segmented.txt"
+            args.wer_file = "wer_test_forced_segmented.txt"
         else:
-            args.wer_suffix = "wer_test.txt"
-    read_wer_test(args.exps, args.wer_suffix, args.out_path)
+            args.wer_file = "wer_test.txt"
+    else:
+        args.wer_file = f"wer_test{args.wer_suffix}.txt"
+    read_wer_test(args.exps, args.wer_file, args.out_path)
