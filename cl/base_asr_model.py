@@ -15,7 +15,7 @@ import torch
 import logging
 from tqdm import tqdm
 import speechbrain as sb
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 from abc import ABC, abstractmethod
 from speechbrain.utils.data_utils import undo_padding
 from speechbrain.utils.metric_stats import wer_details_for_batch
@@ -261,9 +261,11 @@ class BaseASR(sb.core.Brain, ABC):
             ):
                 self.train_set = self.make_random_dataloader()
             # logger.info(f"On stage start: After random. Type of train_set: {type(self.train_set)}.")
-            return self.train_set
-
+            return self.train_set        
         
+        # ############################################################
+        # ####### CASE 3: Make sure there is a need to re-sort #######
+        # ############################################################
         if (self.current_epoch % self.curriculum_update_every) > 0 and \
             (self.sorting in CurriculumDataset.CURRICULUM_KEYS) and \
             (len(self.current_trainset) > 0) and (len(self.sorting_dict) > 0):
@@ -279,7 +281,7 @@ class BaseASR(sb.core.Brain, ABC):
 
         
         # ############################################################
-        # ################### CASE 3: Subsampling ####################
+        # ################### CASE 4: Subsampling ####################
         # ############################################################
         use_default_training = epoch <= getattr(self.hparams, 'default_sorting_epochs', 1) and (self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []))
         # 'random' is not used with subsampling since it a special case where subsample_percentage=1
@@ -295,6 +297,7 @@ class BaseASR(sb.core.Brain, ABC):
                 increase_factor=increase_factor,
                 increase_type=increase_type,
                 step_length=step_length,
+                ckpt_prefix="not-training-",
             )
             logger.info(f"On stage start: After subsample. Type of train_set: {type(self.train_set)}.")
             if sub_dataloader is not None:
@@ -303,10 +306,22 @@ class BaseASR(sb.core.Brain, ABC):
                 msg = f"`do_subsample` is true but not used."
                 logger.warning(msg)
                 raise Exception(msg)
+        if self.do_subsample:
+            # Add a dummy dataloader which will start the counter from zero when `curriculum_sort` is called.
+            # This is because `curriculum_sort` tries to load the best current checkpoint 
+            # which we already have from the first few (default) epochs. The "default" epoch
+            # results don't have the not-training-TRAIN dataloader (which is used only for
+            # creating and saving the subsampled datasets).
+            if self.checkpointer is not None:
+                ckpt_prefix="not-training-"
+                dummy_dataloader = SaveableDataLoader()
+                dummy_dataloader._speechbrain_iterator = NamedTuple('DummyIterator', [('_num_yielded', int)])
+                dummy_dataloader._speechbrain_iterator._num_yielded = 0
+                self.checkpointer.add_recoverable(ckpt_prefix + stage.name, self.optimizer)
         
         
         # ############################################################
-        # ######### CASE 4: Transfer CL with fixed sortings ##########
+        # ######### CASE 5: Transfer CL with fixed sortings ##########
         # ############################################################
         if self.use_fixed_sorting:
             # The train dataloader must have already been created in train.py
@@ -363,12 +378,12 @@ class BaseASR(sb.core.Brain, ABC):
         
         # logger.info(f"On stage start: Before any method. Type of train_set: {type(self.train_set)}.")
         # ############################################################
-        # ########## CASE 5: Default Duration-Base Sorters ###########
+        # ########## CASE 6: Default Duration-Base Sorters ###########
         # ############################################################
         if self.sorting not in CurriculumDataset.CURRICULUM_KEYS:
             return
         # ############################################################
-        # ####### CASE 6: Default Ascending Sorting (for CL) #########
+        # ####### CASE 7: Default Ascending Sorting (for CL) #########
         # ############################################################
         # The parameter 'default_sorting_epochs' denotes the number of "preparation" epochs before
         # starting to sort by the curriculum key. A higher number will result in better prepared
@@ -379,7 +394,7 @@ class BaseASR(sb.core.Brain, ABC):
             return default_sort()
         
         # ############################################################
-        # ################# CASE 7: Loss Sorters #####################
+        # ################# CASE 8: Loss Sorters #####################
         # ############################################################
         if self.sorting in getattr(self.train_set, 'LOSS_SORTERS', []):
             if len(self.sorting_dict) > 0:
@@ -391,7 +406,7 @@ class BaseASR(sb.core.Brain, ABC):
             return default_sort()
         
         # ############################################################
-        # ################# CASE 8: Metric Sorters ###################
+        # ################# CASE 9: Metric Sorters ###################
         # ############################################################
         if self.sorting in getattr(self.train_set, 'METRIC_SORTERS', []):
             if len(self.sorting_dict) > 0:
@@ -403,7 +418,7 @@ class BaseASR(sb.core.Brain, ABC):
             return default_sort()
         
         # ############################################################
-        # ####### CASE 9: Joint Curriculum (NOT IMPLEMENTED) #########
+        # ####### CASE 10: Joint Curriculum (NOT IMPLEMENTED) ########
         # ############################################################
         # For JointCurriculum (check src/classes.py)
         if isinstance(getattr(self.train_set, 'sorting', None), tuple) \
@@ -467,6 +482,7 @@ class BaseASR(sb.core.Brain, ABC):
       increase_factor: Optional[float] = None,
       increase_type: Optional[str] = "additive",
       step_length: Optional[int] = 10,
+      ckpt_prefix="not-training-",
     ):
         assert self.hparams.do_subsample is True
         if not isinstance(percentage, float):
@@ -542,7 +558,7 @@ class BaseASR(sb.core.Brain, ABC):
                         self.train_subset,
                         sorting_dict_save_path=curr_log_path,
                         update_final_dict=not self.use_fixed_sorting,
-                        ckpt_prefix="not-training-",
+                        ckpt_prefix=ckpt_prefix,
                     )
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \

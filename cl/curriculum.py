@@ -382,7 +382,9 @@ class CurriculumDataset(DynamicItemDataset):
 class CurriculumSubset(CurriculumDataset):
     def __init__(self, dataset: CurriculumDataset, indices: Sequence[int], *args, **kwargs) -> None:
         self.dataset = dataset
+        self.data = dataset.data
         self.indices = indices
+        self.data_ids = list(self.data.keys())
         # super().__init__(data=dataset.data, *args, **kwargs)
         self.pipeline = copy.deepcopy(dataset.pipeline)
         # logger.info(f"{dataset.data=}")
