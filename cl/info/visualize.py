@@ -5,6 +5,7 @@ import random
 import re
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
 import numpy as np
 # from numpy import mod
 from .statmd import NoEpochsTrained, _read_stats, get_args, _read_args
@@ -32,6 +33,7 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     n_models = 0
     max_epoch = 0
     min_wer = 200
+    max_wer = 0
     for path in paths:
         try:
             epochs, _, _, valid_metrics_dict = _read_stats([path], [metric])
@@ -45,6 +47,9 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         tmp_min = min(map(lambda w: float(w[0]), valid_metrics_dict[metric]))
         if tmp_min < min_wer:
             min_wer = tmp_min
+        tmp_max = max(map(lambda w: float(w[0]), valid_metrics_dict[metric]))
+        if tmp_max > max_wer:
+            max_wer = tmp_max
         model_to_stats[path] = [epochs, valid_metrics_dict]
     random.shuffle(MPL_COLORS)
     random.shuffle(MPL_MARKERS)
@@ -53,11 +58,14 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     # assert n_models <= len(MPL_COLORS), f"You will need to rotate the MPL_COLORS list. {epochs=}"
     step = 1
     start_epoch = 0
+    zoom = 3
     if max_epoch > 50:
         step = 10
         start_epoch = 15  # first epoch to plot
+        zoom=2
     elif max_epoch > 20:
         step = 5
+        zoom = 2.5
     elif max_epoch > 15:
         step = 2
 
@@ -66,8 +74,10 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     random_markers = (MPL_MARKERS * (1+n_models//len(MPL_MARKERS)))[:n_models]
     fig = plt.figure(figsize=(16, 12))
     fig.suptitle('Model Performances', fontsize=25)
+    ax = fig.add_subplot(111)
     plt.title(f"Model Performances on Validation Set")
     x_axis = list(range(1, max_epoch+1))
+    plot_data = {}
     for i, path in enumerate(model_to_stats):
         epochs, valid_metrics_dict = model_to_stats[path]
         best_valid_epoch, best_valid_wer = _find_best_epoch(epochs, valid_metrics_dict, metric=metric)
@@ -81,16 +91,50 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         best_epoch_index = [ind for ind, x in enumerate(x_axis) if int(x) == best_valid_epoch][0]
         vm_best_wer = [y for ind, y in enumerate(vms) if ind == best_epoch_index][0]
         vm_best_wer = min(max_allowed_wer, vm_best_wer)
-        plt.plot(x_axis, vms, marker=random_markers[i], linewidth=4, label=f"{identifier}", color=random_colors[i])
-        plt.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
-        plt.plot([best_valid_epoch], [vm_best_wer], random_markers[i], ms=14, color=random_colors[i])
-        plt.xticks(list(range(0, max_epoch+1, step)))
-        plt.legend(loc='upper right')
-        plt.xlabel("Epoch")
-        plt.ylabel(f"Metric {metric}")
-        plt.xlim([start_epoch, max_epoch + step])
-        plt.ylim([min_wer-5, max_allowed_wer])
-    fig.tight_layout()
+        ax.plot(x_axis, vms, marker=random_markers[i], linewidth=4, label=f"{identifier}", color=random_colors[i])
+        ax.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
+        ax.plot([best_valid_epoch], [vm_best_wer], random_markers[i], ms=14, color=random_colors[i])
+        ax.set_xticks(list(range(0, max_epoch+1, step)))
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(f"Metric {metric}")
+        ax.set_xlim([start_epoch, max_epoch + step])
+        ax.set_ylim([min_wer-2, max_allowed_wer])
+        ax.legend(loc='upper left')
+        plot_data[path] = {
+            "plot1": {
+                "args": [x_axis, vms], 
+                "kwargs": {"marker": random_markers[i], "linewidth": 4, "label": f"{identifier}", "color": random_colors[i]}
+            },
+            "text": {
+                "args": [best_valid_epoch, vm_best_wer, f"{best_valid_wer}"], "kwargs": {}
+            },
+            "plot2": {
+                "args": [[best_valid_epoch], [vm_best_wer], random_markers[i]], 
+                "kwargs": {"ms": 14, "color": random_colors[i]}
+            }
+        }
+    axins = zoomed_inset_axes(ax, zoom=zoom, loc="center right")
+    # fix the number of ticks on the inset axes
+    axins.yaxis.get_major_locator().set_params(nbins=7)
+    axins.xaxis.get_major_locator().set_params(nbins=7)
+    # axins.tick_params(labelleft=False, labelbottom=False)
+    # sub region of the original image
+    x1, x2, y1, y2 = max_epoch-step*2, max_epoch+min(step/2, 2), min_wer-1, min_wer+4
+    axins.set_xlim(x1, x2)
+    axins.set_ylim(y1, y2)
+    for path in model_to_stats:
+        p = plot_data[path]
+        axins.plot(*p['plot1']['args'], **p['plot1']['kwargs'])
+        best_epoch = p['text']['args'][0]
+        best_wer = p['text']['args'][1]
+        if best_epoch >= x1 and best_wer <= y2:
+            axins.text(*p['text']['args'], **p['text']['kwargs'])
+            axins.plot(*p['plot2']['args'], **p['plot2']['kwargs'])
+
+    # draw a bbox of the region of the inset axes in the parent axes and
+    # connecting lines between the bbox and the inset axes area
+    mark_inset(ax, axins, loc1=3, loc2=4, fc="none", ec="0.5")
+    # fig.tight_layout()
     if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
         print("Showing final plot...")
         plt.show()
