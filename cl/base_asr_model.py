@@ -314,10 +314,9 @@ class BaseASR(sb.core.Brain, ABC):
             # creating and saving the subsampled datasets).
             if self.checkpointer is not None:
                 ckpt_prefix="not-training-"
-                dummy_dataloader = SaveableDataLoader()
-                dummy_dataloader._speechbrain_iterator = NamedTuple('DummyIterator', [('_num_yielded', int)])
-                dummy_dataloader._speechbrain_iterator._num_yielded = 0
-                self.checkpointer.add_recoverable(ckpt_prefix + stage.name, self.optimizer)
+                self.make_dataloader(self.train_set, sb.Stage.TRAIN, ckpt_prefix, **self.train_loader_kwargs)
+                # for _ in dummy_dataloader: break  # initialize iterators
+                # self.checkpointer.add_recoverable(ckpt_prefix + stage.name, self.optimizer)
         
         
         # ############################################################

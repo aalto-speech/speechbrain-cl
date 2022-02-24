@@ -384,15 +384,14 @@ class CurriculumSubset(CurriculumDataset):
         self.dataset = dataset
         self.data = dataset.data
         self.indices = indices
-        self.data_ids = list(self.data.keys())
+        self.data_ids = [data_id for idx, data_id in enumerate(self.data.keys()) if idx in indices]
         # super().__init__(data=dataset.data, *args, **kwargs)
         self.pipeline = copy.deepcopy(dataset.pipeline)
-        # logger.info(f"{dataset.data=}")
 
-    def __getitem__(self, idx):
-        if isinstance(idx, list):
-            return self.dataset[[self.indices[i] for i in idx]]
-        return self.dataset[self.indices[idx]]
+    # def __getitem__(self, idx):
+    #     if isinstance(idx, list):
+    #         return self.dataset[[self.indices[i] for i in idx]]
+    #     return self.dataset[self.indices[idx]]
 
     def __len__(self):
         return len(self.indices)
