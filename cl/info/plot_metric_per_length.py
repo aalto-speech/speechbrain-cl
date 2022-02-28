@@ -1,6 +1,6 @@
 # import argh
+import argparse
 import os
-import sys
 import csv
 import matplotlib.pyplot as plt
 from .find_anomalies import separate_test_entry, FIRST_EXAMPLE_LINE, SEPARATOR
@@ -74,14 +74,41 @@ def plot_per_dataset(utt2stats):
     plot_score_to_dur(spoken, 'Spoken Dataset', 'spoken.png')
     plot_score_to_dur(tutkimustie, 'Tutkimustie Dataset', 'tutkimustie.png')
 
-def main():
-    # Assumptions
-    exp_dir = sys.argv[1]
-    test_wer = os.path.join(exp_dir, "wer_test.txt")
-    test_csv = os.path.join(exp_dir, "test.csv")
-    utt2stats = utterance_map(res_path=test_wer, csv_path=test_csv)
+def _get_parser(parser=None):
+    if parser is None:
+        parser = argparse.ArgumentParser()
+    parser.add_argument("exp_dir", help="Path to an experiment directory\
+        containing the wer_test*.csv and cer_test*.csv files.")
+    parser.add_argument("--suffix", "-s", default="", help="Suffix for the \
+        wer_test*.txt and cer_test*.txt. E.g. if suffix='_segmented' then\
+        we will look for the files wer_test_segmented.txt and cer_test_segmetned.txt.")
+    parser.add_argument("--test-csv", "-t", default=None, help="Path to the test*.csv\
+        file which is used for testing. If not provided and --suffix is provided \
+        then the test file we are going to look for is going to be test*suffix*.csv")
+    parser.add_argument("--cer", "-c", default=False, action="store_true", help="Whether \
+        to check the cer_test*.txt file instead of the wer_test*.txt one.")
+    return parser
+
+def _parse_args(args=None):
+    if args is None:
+        parser = _get_parser()
+        args = parser.parse_args()
+    test_csv = args.test_csv
+    suffix = args.suffix
+    assert os.path.isdir(args.exp_dir), f"{args.exp_dir} does not exist."
+    if test_csv is None:
+        test_csv =  os.path.join(args.exp_dir, f"test{suffix}.csv")
+    if args.cer:
+        test_metric = os.path.join(args.exp_dir, f"cer_test{suffix}.txt")
+    else:
+        test_metric = os.path.join(args.exp_dir, f"wer_test{suffix}.txt")
+    for f in [test_csv, test_metric]:
+        if not os.path.isfile(f):
+            raise FileNotFoundError(f"File {f} could not be found.")
+    
+    utt2stats = utterance_map(res_path=test_metric, csv_path=test_csv)
     plot_score_to_dur(utt2stats)
     plot_per_dataset(utt2stats)
 
 if __name__ == "__main__":
-    main()
+    _parse_args()

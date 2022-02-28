@@ -1,5 +1,8 @@
+import enum
 import math
 import os
+from collections import Counter
+from pyexpat import model
 import sys
 import random
 import re
@@ -30,17 +33,18 @@ def capitalize(l: list):
 
 def plot_valid_results(paths, metric="WER", output_path=None):
     model_to_stats = {}
-    n_models = 0
+    # n_models = 0
     max_epoch = 0
     min_wer = 200
     max_wer = 0
+    stats = {}
     for path in paths:
         try:
             epochs, _, _, valid_metrics_dict = _read_stats([path], [metric])
         except NoEpochsTrained:
             print(f"Model {path} ignored since it hasn't been trained.")
             continue
-        n_models += 1
+        # n_models += 1
         tmp = max(map(lambda x: int(x[0]), epochs))
         if tmp > max_epoch:
             max_epoch = tmp
@@ -50,7 +54,45 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         tmp_max = max(map(lambda w: float(w[0]), valid_metrics_dict[metric]))
         if tmp_max > max_wer:
             max_wer = tmp_max
-        model_to_stats[path] = [epochs, valid_metrics_dict]
+        model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        seed = os.path.basename(os.path.dirname(path)).split("-")[0]
+        identifier = f"{model_id} ({seed})"
+        if model_id in stats:
+            stats[model_id]["valid_metrics_dicts"].append(valid_metrics_dict)
+            stats[model_id]["epochs"].append(epochs)
+            stats[model_id]["seeds"].append(seed)
+        else:
+            stats[model_id] = {"epochs": [epochs], "valid_metrics_dicts": [valid_metrics_dict], "seeds": [seed]}
+    for model_id, d in stats.items():
+        n_curr_models = len(d['seeds'])
+        if n_curr_models == 1:
+            identifier = f"{model_id} ({d['seeds'][0]})"
+            model_to_stats[identifier] = {"epochs": d["epochs"][0], "valid_metrics_dict": d['valid_metrics_dicts'][0]}
+        else:
+            n_epochs_per_run = [len(e) for e in d['epochs']]
+            if len(set(n_epochs_per_run)) < len(n_epochs_per_run):
+                # Then we have at least two runs with the same number of epochs which we can average
+                epoch_counts = Counter(n_epochs_per_run)
+                # print(f"{epoch_counts=}\n{model_id=}\n===================\n")
+                for n_epochs, count in epoch_counts.items():
+                    epochs = [e for e in d['epochs'] if len(e) == n_epochs][0]
+                    vm_dict = [vmd[metric] for i, vmd in enumerate(d['valid_metrics_dicts']) if len(d['epochs'][i])==n_epochs]
+                    vm_dict = {metric: list(map(lambda y: sum(y)/len(y), map(lambda x: x[0], zip(*vm_dict))))}
+                    vm_dict = {metric: [[e] for e in vm_dict[metric]]}
+                    if count > 1:
+                        identifier = f"{model_id} (#runs={count})"
+                    else:
+                        seed = [s for i, s in enumerate(d['seeds']) if len(d['epochs'][i])==n_epochs][0]
+                        identifier = f"{model_id} ({seed})"
+                    model_to_stats[identifier] = {"epochs": epochs, "valid_metrics_dict": vm_dict}
+            else:
+                for i, s in enumerate(d['seeds']):
+                    identifier = f"{model_id} ({s})"
+                    model_to_stats[identifier] = {"epochs": d["epochs"][i], "valid_metrics_dict": d['valid_metrics_dicts'][i]}
+    n_models = len(model_to_stats)
+        # model_to_stats[model_id]["valid_metrics_dict"] = [vm1[0]+vm2[0] for vm1, vm2 in zip(model_to_stats[model_id]["valid_metrics_dict"][metric], valid_metrics_dict[metric])]
+        # model_to_stats[model_id]["seeds"].append(seed)
+        
     random.shuffle(MPL_COLORS)
     random.shuffle(MPL_MARKERS)
     # MPL_COLORS = MPL_COLORS*(1+n_models//len(MPL_COLORS))[:n_models]
@@ -58,14 +100,14 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     # assert n_models <= len(MPL_COLORS), f"You will need to rotate the MPL_COLORS list. {epochs=}"
     step = 1
     start_epoch = 0
-    zoom = 3
+    zoom = 4
     if max_epoch > 50:
         step = 10
         start_epoch = 15  # first epoch to plot
-        zoom=2
+        zoom=3.5
     elif max_epoch > 20:
         step = 5
-        zoom = 2.5
+        zoom = 3
     elif max_epoch > 15:
         step = 2
 
@@ -78,12 +120,14 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     plt.title(f"Model Performances on Validation Set")
     x_axis = list(range(1, max_epoch+1))
     plot_data = {}
-    for i, path in enumerate(model_to_stats):
-        epochs, valid_metrics_dict = model_to_stats[path]
+    # for i, path in enumerate(model_to_stats):
+    for i, identifier in enumerate(model_to_stats):
+        # model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        epochs, valid_metrics_dict = list(model_to_stats[identifier].values())
         best_valid_epoch, best_valid_wer = _find_best_epoch(epochs, valid_metrics_dict, metric=metric)
-        model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
-        seed = os.path.basename(os.path.dirname(path)).split("-")[0]
-        identifier = f"{model_id} ({seed})"
+        # model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        # seed = os.path.basename(os.path.dirname(path)).split("-")[0]
+        # identifier = f"{model_id} ({seed})"
         vms = [min(100, vm[0]) for vm in valid_metrics_dict[metric]]
         # if len(vms) < max_epoch:
         #     vms += [vms[-1]] * (max_epoch-len(vms))
@@ -100,7 +144,7 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         ax.set_xlim([start_epoch, max_epoch + step])
         ax.set_ylim([min_wer-2, max_allowed_wer])
         ax.legend(loc='upper left')
-        plot_data[path] = {
+        plot_data[identifier] = {
             "plot1": {
                 "args": [x_axis, vms], 
                 "kwargs": {"marker": random_markers[i], "linewidth": 4, "label": f"{identifier}", "color": random_colors[i]}
@@ -119,11 +163,11 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     axins.xaxis.get_major_locator().set_params(nbins=7)
     # axins.tick_params(labelleft=False, labelbottom=False)
     # sub region of the original image
-    x1, x2, y1, y2 = max_epoch-step*2, max_epoch+min(step/2, 2), min_wer-1, min_wer+4
+    x1, x2, y1, y2 = max_epoch-min(10, step), max_epoch+min(step/2, 2), min_wer-1, min_wer+4
     axins.set_xlim(x1, x2)
     axins.set_ylim(y1, y2)
-    for path in model_to_stats:
-        p = plot_data[path]
+    for identifier in model_to_stats:
+        p = plot_data[identifier]
         axins.plot(*p['plot1']['args'], **p['plot1']['kwargs'])
         best_epoch = p['text']['args'][0]
         best_wer = p['text']['args'][1]

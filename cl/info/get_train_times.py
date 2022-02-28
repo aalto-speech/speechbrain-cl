@@ -1,13 +1,14 @@
 import argparse
 import os
 import glob
-import random
+from collections import Counter
 import matplotlib.pyplot as plt
 from cl.info.globals import MPL_COLORS
 from .statmd import _read_stats, NoEpochsTrained
 
 def get_train_times(log_txt_pattern, silent=False):
     model_to_times = {}
+    seeds = {}
     iterator = _get_iterator(log_txt_pattern)
     for path in iterator:
         model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
@@ -36,9 +37,43 @@ def get_train_times(log_txt_pattern, silent=False):
                 continue
             raise NoEpochsTrained(msg)
         total_time = max(minutes_per_epoch.values()) / 60  # to hours
-        model_to_times[identifier] = minutes_per_epoch
+        if model_id in model_to_times:
+            model_to_times[model_id]["minutes_per_epoch"].append(minutes_per_epoch)
+            model_to_times[model_id]["seeds"].append(seed)
+        else:
+            model_to_times[model_id] = dict(minutes_per_epoch=[minutes_per_epoch], seeds=[seed])
+        # model_to_times[identifier] = minutes_per_epoch
         print("Model {} took: \t\t {} hours (epochs={})".format(identifier, total_time, len(set(minutes_per_epoch.keys()))))
-    return model_to_times
+    out = {}
+    for model_id, d in model_to_times.items():
+        minutes_per_epoch = d['minutes_per_epoch']
+        if len(minutes_per_epoch) == 1:
+            out[model_id] = minutes_per_epoch[0]
+        else:
+            n_epochs_per_run = [len(list(e.values())) for e in minutes_per_epoch]
+            if len(set(n_epochs_per_run)) < len(n_epochs_per_run):
+                # Then we have at least two runs with the same number of epochs which we can average
+                epoch_counts = Counter(n_epochs_per_run)
+                print(f"{minutes_per_epoch=}\n{model_id=}, seeds={d['seeds']}, counts={n_epochs_per_run}\n===================\n")
+                for n_epochs, count in epoch_counts.items():
+                    mins_per_epoch_current = {}
+                    common_indices = [i for i in range(len(n_epochs_per_run)) if len(minutes_per_epoch[i]) == n_epochs]
+                    relevant = [e for i, e in enumerate(minutes_per_epoch) if i in common_indices]
+                    relevant_epochs = relevant[0].keys()
+                    for e in relevant_epochs:
+                        times = list(map(lambda x: x[e], relevant))
+                        mins_per_epoch_current[e] = sum(times)/len(times)
+                    if count > 1:
+                        identifier = f"{model_id} (#runs={count})"
+                    else:
+                        seed = [s for i, s in enumerate(d['seeds']) if len(minutes_per_epoch[i].keys())==n_epochs][0]
+                        identifier = f"{model_id} ({seed})"
+                    out[identifier] = mins_per_epoch_current
+            else:
+                for i, s in enumerate(d['seeds']):
+                    identifier = f"{model_id} ({s})"
+                    out[identifier] = minutes_per_epoch[i]
+    return out
 
 def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     model_to_times = get_train_times(log_txt_pattern, silent)
@@ -48,11 +83,14 @@ def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     fig.suptitle('Train Times', fontsize=25)
     random_colors = (MPL_COLORS * round(n_models/len(MPL_COLORS) + 0.5))[:n_models]
     # x_big_markers, y_big_markers = [], []
-    for i, model in enumerate(model_to_times):
-        model_base = os.path.basename(model)
-        best_epoch, best_wer = model_to_best_val[model_base]
-        x_axis = list(model_to_times[model].keys())
-        vals_to_hours = map(lambda x: x/60, list(model_to_times[model].values()))
+    for i, model_base in enumerate(model_to_times):
+        try:
+            best_epoch, best_wer = model_to_best_val[model_base]
+        except KeyError:
+            relevant_entries = [v for k, v in model_to_best_val.items() if k.split("(")[0].strip() in model_base]
+            best_epoch, best_wer = max(relevant_entries, key=lambda x: x[1])
+        x_axis = list(model_to_times[model_base].keys())
+        vals_to_hours = map(lambda x: x/60, list(model_to_times[model_base].values()))
         y_axis = list(vals_to_hours)
         best_epoch_index = [ind for ind, x in enumerate(x_axis) if x == best_epoch][0]
         time_of_best_wer = [y for ind, y in enumerate(y_axis) if ind == best_epoch_index][0]

@@ -2,11 +2,12 @@
 import random
 import os, glob
 import argparse
+from re import M
 import matplotlib.pyplot as plt
 from cl.info.globals import MPL_COLORS
 
 
-def read_wer_test(exp_dirs, wer_test_file="wer_test.txt", out_path=None):
+def read_wer_test(exp_dirs, wer_test_file="wer_test.txt", out_path=None, wer_threshold=100):
     if len(exp_dirs) == 1:
         wer_files = glob.glob(os.path.join(exp_dirs[0], "*", wer_test_file))
         wer_files += glob.glob(os.path.join(exp_dirs[0], wer_test_file))
@@ -24,13 +25,26 @@ def read_wer_test(exp_dirs, wer_test_file="wer_test.txt", out_path=None):
     for wf in wer_files:
         with open(wf, 'r', encoding='utf-8') as f:
             wer = float(f.readline().split()[1])
+        if wer > wer_threshold:
+            continue
         model_name = os.path.basename(os.path.dirname(os.path.dirname(wf)))
         seed = os.path.basename(os.path.dirname(wf)).split("-")[0]
         identifier = f"{model_name} ({seed})"
-        model_to_wer[identifier] = wer
-        print(f"Model: {identifier} ==> WER={wer}.")
-    models = list(model_to_wer.keys())
-    wers = list(model_to_wer.values())
+        # model_to_wer[identifier] = wer
+        if model_name in model_to_wer:
+            model_to_wer[model_name].append(wer)
+        else:
+            model_to_wer[model_name] = [wer]
+        # print(f"Model: {identifier} ==> WER={wer}.")
+        print(model_name, "===>", model_to_wer)
+    models, wers = [], []
+    for model, wer in model_to_wer.items():
+        identifier = f"{model} (#runs={len(wer)})"
+        wer = sum(wer) / len(wer)
+        models.append(identifier)
+        wers.append(wer)
+    # models = list(model_to_wer.keys())
+    # wers = list(model_to_wer.values())
     fig = plt.figure(figsize = (16, 12))
     #  Bar plot
     barplot = plt.barh(models, wers)

@@ -6,6 +6,7 @@ from .info.statmd import get_args, statmd, _add_parser_args
 from .info.get_train_times import main as get_train_times
 from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
 from .info.find_anomalies import _parse_args as test_anomalies, _get_parser as test_anomalies_parser
+from .info.plot_metric_per_length import _get_parser as parse_test_wrt_durations, _parse_args as plot_test_per_length
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -38,6 +39,15 @@ def dispatch():
     wer_bp_parser.set_defaults(func=testset_boxplot_comparison)
 
     # ============================================
+    # ======== TEST STATS W.R.T. DURATIONS =======
+    # ============================================
+    test_and_dur_parser = subparsers.add_parser(
+        "test_and_duration", aliases=["td"], help = "Print wer scores on the test set w.r.t. the durations of the utterances."
+    )
+    test_and_dur_parser = parse_test_wrt_durations(test_and_dur_parser)
+    test_and_dur_parser.set_defaults(func=plot_test_per_length)
+
+    # ============================================
     # ============ PRINT TEST STATS ==============
     # ============================================
     testwer_parser = subparsers.add_parser(
@@ -63,7 +73,6 @@ def dispatch():
                 args.wer_file = "wer_test.txt"
         else:
             args.wer_file = f"wer_test{args.wer_suffix}.txt"
-        print(args)
         read_wer_test(args.exps, args.wer_file, args.out_path)
     testwer_parser.set_defaults(func=testwer_func)
 
