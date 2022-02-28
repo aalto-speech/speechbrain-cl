@@ -238,6 +238,7 @@ class BaseASR(sb.core.Brain, ABC):
         # checks all checkpoints and tries to find the one with the most
         # datapoints in `final_sortings`.
         # logger.info(f"On fit start. Type of train_set: {type(self.train_set)}.")
+    
     @checkpoint_wrapper_cl
     def on_stage_start(self, stage, epoch):
         """Gets called at the beginning of each epoch"""
@@ -428,7 +429,7 @@ class BaseASR(sb.core.Brain, ABC):
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of an epoch."""
         if stage == sb.Stage.TRAIN:
-            if self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []):
+            if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
                 self._loaded_checkpoint = False
                 if self.current_epoch+1 <= getattr(self.hparams, 'default_sorting_epochs', 1):
                     # E.g. if we are on epoch 1 and `default_sorting_epochs` is 2, then 
@@ -558,7 +559,11 @@ class BaseASR(sb.core.Brain, ABC):
                         sorting_dict_save_path=curr_log_path,
                         update_final_dict=not self.use_fixed_sorting,
                         ckpt_prefix=ckpt_prefix,
+                        try_recover=False,  # always re-iterate the dataloader so that the sorting-dict will be calculated from scratch
                     )
+                    if len(self.sorting_dict) > len(shuffled_train_ids):
+                        logger.warning(f"CREATED A CURRICULUM OF SIZE {len(self.sorting_dict)} WHILE THE SUBSET SHOULD BE OF LENGTH {len(shuffled_train_ids)}.")
+                        self.sorting_dict = {k: v for k, v in self.sorting_dict.items() if k in self.train_subset.data_ids}
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \
                 {len(shuffled_train_ids)} datapoints (out of {len(self.train_set)})."))
@@ -576,6 +581,7 @@ class BaseASR(sb.core.Brain, ABC):
                 reverse=getattr(self.hparams, "reverse", False),
                 noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
             )
+        logger.info(f"Size of the 'subsampled' trainset: ${len(train_set)}")
         dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
         if not self.use_fixed_sorting:
             self.final_sortings = {}
@@ -694,11 +700,12 @@ class BaseASR(sb.core.Brain, ABC):
     
     def create_curriculum_dict(
         self, 
-        train_set: DynamicItemDataset, 
+        train_set: Optional[DynamicItemDataset] = None, 
         sorting_dict_save_path: Optional[str] = None, 
         progressbar: Optional[bool] = None,
         update_final_dict: bool = True,
         ckpt_prefix: str = "dataloader-",
+        try_recover: bool = True,
     ):
         """ Create and return a curriculum dictionary based on the current checkpoint.
             Loads a checkpoint and iterates the train set for one epoch in order to 
@@ -730,7 +737,7 @@ class BaseASR(sb.core.Brain, ABC):
                 **self.train_loader_kwargs
             )
         # Load a checkpoint if we previously stopped midway
-        if self.checkpointer is not None:
+        if try_recover and self.checkpointer is not None:
             old_epoch = self.current_epoch
             self.checkpointer.recover_if_possible(
                 importance_key=self.ckpt_importance_key,
