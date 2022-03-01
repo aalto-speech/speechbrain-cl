@@ -7,6 +7,7 @@ from .info.get_train_times import main as get_train_times
 from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
 from .info.find_anomalies import _parse_args as test_anomalies, _get_parser as test_anomalies_parser
 from .info.plot_metric_per_length import _get_parser as parse_test_wrt_durations, _parse_args as plot_test_per_length
+from .info.log_corr import _get_parser as _get_corr_parser, _parse_args as _parse_corr_args
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -73,7 +74,7 @@ def dispatch():
                 args.wer_file = "wer_test.txt"
         else:
             args.wer_file = f"wer_test{args.wer_suffix}.txt"
-        read_wer_test(args.exps, args.wer_file, args.out_path)
+        read_wer_test(args.exps, args.wer_file, args.out_path, name_mappings_file=args.model_name_mappings)
     testwer_parser.set_defaults(func=testwer_func)
 
     # ============================================
@@ -134,6 +135,16 @@ def dispatch():
     train_times_parser.add_argument("--silent", "-s", default=False, action="store_true",
         help="If provided, the program won't throw NoEpochsTrained errors.")
     train_times_parser.set_defaults(func=get_train_times)
+
+    # ============================================
+    # =============== BOXPLOTS ===================
+    # ============================================
+    corr_parser = subparsers.add_parser(
+        "correlations", aliases=["c"], help = "Calculate correlations between\
+            the different orderings provided by each curriculum method."
+    )
+    corr_parser = _get_corr_parser(corr_parser)
+    corr_parser.set_defaults(func=_parse_corr_args)
 
     args = parser.parse_args()
     args.func(args)

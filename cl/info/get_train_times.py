@@ -3,6 +3,7 @@ import os
 import glob
 from collections import Counter
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
 from cl.info.globals import MPL_COLORS
 from .statmd import _read_stats, NoEpochsTrained
 
@@ -54,7 +55,7 @@ def get_train_times(log_txt_pattern, silent=False):
             if len(set(n_epochs_per_run)) < len(n_epochs_per_run):
                 # Then we have at least two runs with the same number of epochs which we can average
                 epoch_counts = Counter(n_epochs_per_run)
-                print(f"{minutes_per_epoch=}\n{model_id=}, seeds={d['seeds']}, counts={n_epochs_per_run}\n===================\n")
+                # print(f"{minutes_per_epoch=}\n{model_id=}, seeds={d['seeds']}, counts={n_epochs_per_run}\n===================\n")
                 for n_epochs, count in epoch_counts.items():
                     mins_per_epoch_current = {}
                     common_indices = [i for i in range(len(n_epochs_per_run)) if len(minutes_per_epoch[i]) == n_epochs]
@@ -81,6 +82,10 @@ def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     n_models = len(model_to_times)
     fig = plt.figure(figsize=(20, 14))
     fig.suptitle('Train Times', fontsize=25)
+    ax = fig.add_subplot(111)
+    plot_data = {}
+    n_epochs = 0
+    highest_time = 0
     random_colors = (MPL_COLORS * round(n_models/len(MPL_COLORS) + 0.5))[:n_models]
     # x_big_markers, y_big_markers = [], []
     for i, model_base in enumerate(model_to_times):
@@ -90,18 +95,60 @@ def plot_train_times(log_txt_pattern, out_path=None, silent=False):
             relevant_entries = [v for k, v in model_to_best_val.items() if k.split("(")[0].strip() in model_base]
             best_epoch, best_wer = max(relevant_entries, key=lambda x: x[1])
         x_axis = list(model_to_times[model_base].keys())
-        vals_to_hours = map(lambda x: x/60, list(model_to_times[model_base].values()))
-        y_axis = list(vals_to_hours)
+        y_axis = list(map(lambda x: x/60, list(model_to_times[model_base].values())))
         best_epoch_index = [ind for ind, x in enumerate(x_axis) if x == best_epoch][0]
         time_of_best_wer = [y for ind, y in enumerate(y_axis) if ind == best_epoch_index][0]
         # x_big_markers.append(best_epoch_index)
         # y_big_markers.append(time_of_best_wer)
-        plt.plot(x_axis, y_axis, label=model_base, marker="o", color=random_colors[i])
-        plt.text(best_epoch, time_of_best_wer, best_wer)
-        plt.plot([best_epoch], [time_of_best_wer], 'o', ms=14, color=random_colors[i])
-    plt.legend()
-    plt.xlabel("Epoch")
-    plt.ylabel("Train time (hours)")
+        n_epochs = max(len(y_axis), n_epochs)
+        highest_time = max(y_axis[-1], highest_time)
+        ax.plot(x_axis, y_axis, label=model_base, marker="o", color=random_colors[i])
+        ax.text(best_epoch, time_of_best_wer, best_wer)
+        ax.plot([best_epoch], [time_of_best_wer], 'o', ms=14, color=random_colors[i])
+        plot_data[model_base] = {
+            "plot1": {
+                "args": [x_axis, y_axis], 
+                "kwargs": {"label": model_base, "marker": "o", "color": random_colors[i]}
+            },
+            "text": {
+                "args": [best_epoch, time_of_best_wer, best_wer], "kwargs": {}
+            },
+            "plot2": {
+                "args": [[best_epoch], [time_of_best_wer], 'o'], 
+                "kwargs": {"ms": 14, "color": random_colors[i]}
+            }
+        }
+    highest_time, lowest_time = 0, highest_time
+    for identifier in plot_data:
+        y_axis = plot_data[identifier]['plot1']['args'][1]
+        if len(y_axis) == n_epochs:
+            highest_time = max(y_axis[-1], highest_time)
+            lowest_time = min(y_axis[-1], lowest_time)
+    ax.legend()
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Train time (hours)")
+    axins = zoomed_inset_axes(ax, zoom=3, loc="lower right", borderpad=2)
+    # fix the number of ticks on the inset axes
+    axins.yaxis.get_major_locator().set_params(nbins=7)
+    axins.xaxis.get_major_locator().set_params(nbins=7)
+    # sub region of the original image
+    x1, x2 = n_epochs-max(n_epochs//15, 2), n_epochs+1
+    y1, y2 = lowest_time-1, highest_time+1
+    axins.set_xlim(x1, x2)
+    axins.set_ylim(y1, y2)
+    for identifier in plot_data:
+        p = plot_data[identifier]
+        axins.plot(*p['plot1']['args'], **p['plot1']['kwargs'])
+        best_epoch = p['text']['args'][0]
+        best_wer = p['text']['args'][1]
+        if best_epoch >= x1 and best_wer <= y2:
+            axins.text(*p['text']['args'], **p['text']['kwargs'])
+            axins.plot(*p['plot2']['args'], **p['plot2']['kwargs'])
+
+    # draw a bbox of the region of the inset axes in the parent axes and
+    # connecting lines between the bbox and the inset axes area
+    mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5")
+
     if out_path is None:
         plt.show()
         return
