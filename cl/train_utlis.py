@@ -155,7 +155,8 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
             os.mkdir(_save_folder)
         sorting_dict = asr_temp.create_curriculum_dict(
             train_set=asr_temp.train_set, 
-            sorting_dict_save_path=sorting_dict_log
+            sorting_dict_save_path=sorting_dict_log,
+            try_recover=False,
         )
         del train_dataset, pm_tokenizer, pretrained_hparams, asr_temp
         asr_brain.train_set = asr_brain.train_set.filtered_sorted(
