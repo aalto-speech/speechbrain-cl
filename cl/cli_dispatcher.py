@@ -110,6 +110,11 @@ def dispatch():
         "--plot-valid-results", "-v", default=False, action="store_true",
         help="If provided then the validation set's performance progress will be plotted for each model."
     )
+    log_plot_parser.add_argument(
+        "--barplot", "-b", default=False, action="store_true",
+        help="If provided then instead of line plots we are going to plot\
+            grouped barplots (per epoch)."
+    )
     log_plot_parser = _add_parser_args(log_plot_parser)
     log_plot_parser.set_defaults(func=plot_logs_dispatcher)
 

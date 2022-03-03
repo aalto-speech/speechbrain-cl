@@ -1,7 +1,7 @@
 import enum
 import math
 import os
-from collections import Counter
+from collections import Counter, defaultdict
 from pyexpat import model
 import sys
 import random
@@ -9,12 +9,14 @@ import re
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
+import seaborn as sns
 import numpy as np
 # from numpy import mod
 from .statmd import NoEpochsTrained, _read_stats, get_args, _read_args
 from .find_anomalies import read_single
 from .get_train_times import _find_best_epoch
 from cl.info.globals import MPL_COLORS, MAPPINGS, MPL_MARKERS
+sns.set()
 
 
 plt.rcParams.update({'font.size': 19})
@@ -115,9 +117,9 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     random_colors = (MPL_COLORS * (1+n_models//len(MPL_COLORS)))[:n_models]
     random_markers = (MPL_MARKERS * (1+n_models//len(MPL_MARKERS)))[:n_models]
     fig = plt.figure(figsize=(16, 12))
-    fig.suptitle('Model Performances', fontsize=25)
+    # fig.suptitle('Model Performances on Validation Set', fontsize=25)
     ax = fig.add_subplot(111)
-    plt.title(f"Model Performances on Validation Set")
+    plt.title(f"Model Performances on Validation Set", fontsize=20)
     x_axis = list(range(1, max_epoch+1))
     plot_data = {}
     # for i, path in enumerate(model_to_stats):
@@ -136,8 +138,10 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         vm_best_wer = [y for ind, y in enumerate(vms) if ind == best_epoch_index][0]
         vm_best_wer = min(max_allowed_wer, vm_best_wer)
         ax.plot(x_axis, vms, marker=random_markers[i], linewidth=4, label=f"{identifier}", color=random_colors[i])
-        ax.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
-        ax.plot([best_valid_epoch], [vm_best_wer], random_markers[i], ms=14, color=random_colors[i])
+        
+        if best_epoch_index > start_epoch and vm_best_wer<=max_allowed_wer:
+            ax.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
+            ax.plot([best_valid_epoch], [vm_best_wer], random_markers[i], ms=14, color=random_colors[i])
         ax.set_xticks(list(range(0, max_epoch+1, step)))
         ax.set_xlabel("Epoch")
         ax.set_ylabel(f"Metric {metric}")
@@ -157,7 +161,7 @@ def plot_valid_results(paths, metric="WER", output_path=None):
                 "kwargs": {"ms": 14, "color": random_colors[i]}
             }
         }
-    axins = zoomed_inset_axes(ax, zoom=zoom, loc="center right")
+    axins = zoomed_inset_axes(ax, zoom=zoom, loc="upper right", borderpad=2.0)
     # fix the number of ticks on the inset axes
     axins.yaxis.get_major_locator().set_params(nbins=7)
     axins.xaxis.get_major_locator().set_params(nbins=7)
@@ -178,13 +182,254 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     # draw a bbox of the region of the inset axes in the parent axes and
     # connecting lines between the bbox and the inset axes area
     mark_inset(ax, axins, loc1=3, loc2=4, fc="none", ec="0.5")
-    # fig.tight_layout()
+    fig.tight_layout()
     if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
         print("Showing final plot...")
         plt.show()
     else:
         print("Saving plot under:", output_path)
         plt.savefig(output_path)
+
+def plot_train_valid_loss(paths, output_path=None):
+    model_to_stats = {}
+    # n_models = 0
+    max_epoch = 0
+    min_train = 200
+    min_val = 200
+    stats = {}
+    max_loss = 0
+    for path in paths:
+        try:
+            epochs, train_losses, valid_losses, _ = _read_stats([path])
+        except NoEpochsTrained:
+            print(f"Model {path} ignored since it hasn't been trained.")
+            continue
+        # n_models += 1
+        tmp = max(map(lambda x: int(x[0]), epochs))
+        if tmp > max_epoch:
+            max_epoch = tmp
+        tls = list(map(lambda l: float(l[0]), train_losses))
+        vls = list(map(lambda l: float(l[0]), valid_losses))
+        tmp_min_train = min(tls)
+        if tmp_min_train < min_train:
+            min_train = tmp_min_train
+        tmp_min_val = min(vls)
+        if tmp_min_val < min_val:
+            min_val = tmp_min_val
+        tmp_max_loss = max(tls+vls)
+        if tmp_max_loss > max_loss:
+            max_loss = tmp_max_loss
+        model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        seed = os.path.basename(os.path.dirname(path)).split("-")[0]
+        identifier = f"{model_id} ({seed})"
+        if model_id in stats:
+            stats[model_id]["train_losses"].append(train_losses)
+            stats[model_id]["valid_losses"].append(valid_losses)
+            stats[model_id]["epochs"].append(epochs)
+            stats[model_id]["seeds"].append(seed)
+        else:
+            stats[model_id] = {
+                "epochs": [epochs], 
+                "train_losses": [train_losses],
+                "valid_losses": [valid_losses],
+                "seeds": [seed],
+            }
+    def sum_losses_list(d, d_losses_key, n_epochs):
+        l_list = [tld for i, tld in enumerate(d[d_losses_key]) if len(d['epochs'][i])==n_epochs]
+        l_list = list(map(lambda y: sum(y)/len(y), map(lambda x: x[0], zip(*l_list))))
+        l_list = [[e] for e in l_list]
+        return l_list
+    for model_id, d in stats.items():
+        n_curr_models = len(d['seeds'])
+        if n_curr_models == 1:
+            identifier = f"{model_id} ({d['seeds'][0]})"
+            model_to_stats[identifier] = {
+                "epochs": d["epochs"][0],
+                "train_losses": d['train_losses'][0],
+                "valid_losses": d['valid_losses'][0],
+            }
+        else:
+            n_epochs_per_run = [len(e) for e in d['epochs']]
+            if len(set(n_epochs_per_run)) < len(n_epochs_per_run):
+                # Then we have at least two runs with the same number of epochs which we can average
+                epoch_counts = Counter(n_epochs_per_run)
+                # print(f"{epoch_counts=}\n{model_id=}\n===================\n")
+                for n_epochs, count in epoch_counts.items():
+                    epochs = [e for e in d['epochs'] if len(e) == n_epochs][0]
+                    tls = sum_losses_list(d, "train_losses", n_epochs)
+                    vls = sum_losses_list(d, "valid_losses", n_epochs)
+                    if count > 1:
+                        identifier = f"{model_id} (#runs={count})"
+                    else:
+                        seed = [s for i, s in enumerate(d['seeds']) if len(d['epochs'][i])==n_epochs][0]
+                        identifier = f"{model_id} ({seed})"
+                    model_to_stats[identifier] = {
+                        "epochs": epochs,
+                        "train_losses": tls,
+                        "valid_losses": vls,
+                    }
+            else:
+                for i, s in enumerate(d['seeds']):
+                    identifier = f"{model_id} ({s})"
+                    model_to_stats[identifier] = {
+                        "epochs": d["epochs"][i],
+                        "train_losses": d['train_losses'][i],
+                        "valid_losses": d['valid_losses'][i],
+                    }
+    n_models = len(model_to_stats)
+        
+    random.shuffle(MPL_COLORS)
+    random.shuffle(MPL_MARKERS)
+    # MPL_COLORS = MPL_COLORS*(1+n_models//len(MPL_COLORS))[:n_models]
+    # MPL_MARKERS = MPL_MARKERS*(1+n_models//len(MPL_MARKERS))[:n_models]
+    # assert n_models <= len(MPL_COLORS), f"You will need to rotate the MPL_COLORS list. {epochs=}"
+    step = 1
+    if max_epoch > 50:
+        step = 10
+    elif max_epoch > 20:
+        step = 5
+    elif max_epoch > 15:
+        step = 2
+
+    random_colors = (MPL_COLORS * (1+(n_models*2)//len(MPL_COLORS)))[:n_models*2]
+    random_markers = (MPL_MARKERS * (1+(n_models*2)//len(MPL_MARKERS)))[:n_models*2]
+    # fig = plt.figure(figsize=(16, 12))
+    fig, axes = plt.subplots(math.ceil(len(model_to_stats)/2), 2, sharey=True, figsize=(16,12))
+    fig.suptitle('Model Performances', fontsize=25)
+    plt.title(f"Model Performances on Validation Set")
+    x_axis = list(range(1, max_epoch+1))
+    print("Number of models:", len(model_to_stats))
+    for i, identifier in enumerate(model_to_stats):
+        # model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        epochs, train_losses, valid_losses = list(model_to_stats[identifier].values())
+        tls = [tl[0] for tl in train_losses]
+        vls = [vl[0] for vl in valid_losses]
+        x_axis = [int(e[0]) for e in epochs]
+        x_axis = list(range(len(epochs)))
+
+        # Plot possition
+        if len(model_to_stats) == 1:
+            current_ax = axes
+        else:
+            current_ax = axes[i//2][i%2] if len(model_to_stats)>2 else axes[i]
+        d2 = {
+            "Epoch": x_axis,
+            "Train Loss": tls,
+            "Valid Loss": vls,
+        }
+        assert len(x_axis) == len(tls) == len(vls)
+        sns.regplot(x=list(range(len(epochs))), y=tls,
+            ci=None, scatter=False, order=4, label=f"Train Loss: {identifier}",
+            ax=current_ax, color=random_colors[i*2]
+        )
+        sns.regplot(x=list(range(len(epochs))), y=vls,
+            ci=None, scatter=False, order=4, label=f"Valid Loss: {identifier}",
+            ax=current_ax, color=random_colors[i*2+1]
+        )
+        current_ax.set_title(f"Model: {identifier}")
+        # current_ax.set_xticks(list(range(0, max_epoch+1, step)))
+        current_ax.legend(loc='upper right')
+        # current_ax.set_xlim([0, max_epoch+step])
+        # current_ax.set_ylim([min(min_train, min_val)-1, max_loss])
+        current_ax.set_xlabel("Epoch")
+        current_ax.set_ylabel("Loss")
+    
+    fig.tight_layout()
+    if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
+        print("Showing final plot...")
+        plt.show()
+    else:
+        print("Saving plot under:", output_path)
+        plt.savefig(output_path)
+
+def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
+    model_to_stats = {}
+    # n_models = 0
+    stats = {}
+    max_epoch = 0
+    for path in paths:
+        try:
+            epochs, _, _, valid_metrics_dict = _read_stats([path], [metric])
+        except NoEpochsTrained:
+            print(f"Model {path} ignored since it hasn't been trained.")
+            continue
+        tmp = max(map(lambda x: int(x[0]), epochs))
+        if tmp > max_epoch:
+            max_epoch = tmp
+        model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        seed = os.path.basename(os.path.dirname(path)).split("-")[0]
+        identifier = f"{model_id} ({seed})"
+        if model_id in stats:
+            stats[model_id]["valid_metrics_dicts"].append(valid_metrics_dict)
+            stats[model_id]["epochs"].append(epochs)
+            stats[model_id]["seeds"].append(seed)
+        else:
+            stats[model_id] = {"epochs": [epochs], "valid_metrics_dicts": [valid_metrics_dict], "seeds": [seed]}
+    for model_id, d in stats.items():
+        n_curr_models = len(d['seeds'])
+        if n_curr_models == 1:
+            identifier = f"{model_id} ({d['seeds'][0]})"
+            model_to_stats[identifier] = {"epochs": d["epochs"][0], "valid_metrics_dict": d['valid_metrics_dicts'][0]}
+        else:
+            n_epochs_per_run = [len(e) for e in d['epochs']]
+            if len(set(n_epochs_per_run)) < len(n_epochs_per_run):
+                # Then we have at least two runs with the same number of epochs which we can average
+                epoch_counts = Counter(n_epochs_per_run)
+                # print(f"{epoch_counts=}\n{model_id=}\n===================\n")
+                for n_epochs, count in epoch_counts.items():
+                    epochs = [e for e in d['epochs'] if len(e) == n_epochs][0]
+                    vm_dict = [vmd[metric] for i, vmd in enumerate(d['valid_metrics_dicts']) if len(d['epochs'][i])==n_epochs]
+                    vm_dict = {metric: list(map(lambda y: sum(y)/len(y), map(lambda x: x[0], zip(*vm_dict))))}
+                    vm_dict = {metric: [[e] for e in vm_dict[metric]]}
+                    if count > 1:
+                        identifier = f"{model_id} (#runs={count})"
+                    else:
+                        seed = [s for i, s in enumerate(d['seeds']) if len(d['epochs'][i])==n_epochs][0]
+                        identifier = f"{model_id} ({seed})"
+                    model_to_stats[identifier] = {"epochs": epochs, "valid_metrics_dict": vm_dict}
+            else:
+                for i, s in enumerate(d['seeds']):
+                    identifier = f"{model_id} ({s})"
+                    model_to_stats[identifier] = {"epochs": d["epochs"][i], "valid_metrics_dict": d['valid_metrics_dicts'][i]}
+    fig = plt.figure(figsize=(16, 12))
+    plt.title(f"Model Performances on Validation Set", fontsize=20)
+    barplot_list = []
+
+    for i, identifier in enumerate(model_to_stats):
+        # model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        epochs, valid_metrics_dict = list(model_to_stats[identifier].values())
+        epochs = [int(e[0]) for e in epochs]
+        metric_vals = [min(100, vm[0]) for vm in valid_metrics_dict[metric]]
+        names = [identifier]*len(epochs)
+        l = list(zip(names, epochs, metric_vals))
+        barplot_list += l
+    multiple_bar_plots(barplot_list, values_name=f"Metric: {metric}")
+    plt.legend(loc='upper right')
+    fig.tight_layout()
+    if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
+        print("Showing final plot...")
+        plt.show()
+    else:
+        print("Saving plot under:", output_path)
+        plt.savefig(output_path)
+
+
+def multiple_bar_plots(barplot_list, values_name="Values"):
+    import pandas as pd
+    names, epochs, metric_vals = zip(*barplot_list)
+    d = {
+        "Model Name": names,
+        "Epoch": epochs,
+        values_name: metric_vals,
+    }
+    df = pd.DataFrame(d)
+    g = sns.catplot(
+        data=df, kind="bar",
+        x="Epoch", y=values_name, hue="Model Name",
+        ci="sd", palette="dark", alpha=.6,
+        legend=False, height=12, aspect=16/12
+    )
+    g.despine(left=True)
 
 
 def plot_logs(paths, metrics=["PER"], output_path=None, print_seed=False):
@@ -322,8 +567,11 @@ def testset_boxplot_comparison(args):
 def plot_logs_dispatcher(args):
     paths, metrics, output_path, _ = _read_args(args)
     if args.plot_valid_results is True:
-        return plot_valid_results(paths, metrics[0], output_path)
-    return plot_logs(paths, metrics, output_path, args.print_seed)
+        if args.barplot is False:
+            return plot_valid_results(paths, metrics[0], output_path)
+        return valid_scores_grouped_bp(paths, metrics[0], output_path)
+    # return plot_logs(paths, metrics, output_path, args.print_seed)
+    return plot_train_valid_loss(paths, output_path)
 
 def main():
 

@@ -3,9 +3,13 @@ import os, glob
 import ast
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from scipy.stats import spearmanr
 from tqdm import tqdm
+sns.set()
 
+
+class NoCurriculumOrderings(Exception): pass
 
 def calc_corr(*paths, **kwargs):
     out_path = kwargs.pop('out_path', None)
@@ -20,10 +24,18 @@ def calc_corr(*paths, **kwargs):
             if "ascending" in p:
                 current_paths = [os.path.join(p, "ascending_dict.log")]
             else:
-                current_paths = glob.glob(os.path.join(p, '*.log'))
+                current_paths = glob.glob(os.path.join(p, 'curriculum_logs', '*.log'))
             if fig is None:
                 fig = plt.figure(figsize=(16, 12))
-            _calc_corr_single(*current_paths, **kwargs, show=False, out_path=out_path)
+            try:
+                _calc_corr_single(*current_paths, **kwargs, show=False, out_path=out_path, allow_length_one=False)
+            except NoCurriculumOrderings as ne:
+                print(ne)
+                print(f"Occurred on path {p}")
+                continue
+            except Exception as e:
+                print(f"Error while processing path {p} and current_paths being {current_paths}")
+                raise e
             show_later = True
         else:
             assert os.path.isfile(p), f"Could not locate path {p}"
@@ -40,6 +52,10 @@ def calc_corr(*paths, **kwargs):
 def _calc_corr_single(*paths, **kwargs):
     curriculums = {}
     types = []
+    if len(paths) == 0:
+        raise NoCurriculumOrderings("Could not find any curriculum ordering logs.")
+    if not kwargs.pop("allow_length_one", True) and len(paths) == 1:
+        return
     pbar = tqdm(paths)
     for p in pbar:
         if "random" in p:
@@ -47,14 +63,17 @@ def _calc_corr_single(*paths, **kwargs):
                 corresponding orderings are saved as indices in numpy format.\
                 To fix that you should load the numpy indices and the train csv file \
                 and then map the indices to the corresponding utterance ids.")
-        if "no_ga" in p:
+        if ("no_ga" in p) and ("tr" not in p):
             raise Exception("for no curriculum you need to read the train csv file\
                 and return the utterance ids as they appear.")
         if "ascending" in p:
             epoch = 0
             type_index = -3
         else:
-            epoch = int(p.split("epoch=")[1].split('.')[0])
+            try:
+                epoch = int(p.split("epoch=")[1].split('.')[0])
+            except IndexError:
+                raise IndexError(f"Index out of bounds for path {p}.")
             type_index = -4
         type = p.split("/")[type_index]
         seed = p.split("/")[type_index+1].split("-")[0]
@@ -68,8 +87,8 @@ def _calc_corr_single(*paths, **kwargs):
                 order[utt_id] = score
         types.append(type)
         curriculums[epoch] = order.copy()
-        if len(curriculums) == 5:
-            break
+        # if len(curriculums) == 5:
+        #     break
     identifier = f"{type} ({seed=})"
     corr_m = np.zeros((len(curriculums), len(curriculums)))
     selected_keys = list(curriculums.keys())
@@ -77,7 +96,7 @@ def _calc_corr_single(*paths, **kwargs):
     # sort based on epochs
     correlations = {k: v for k, v in sorted(curriculums.items(), key=lambda x: x[0])}
     corr_per_epoch = {}
-    pbar = tqdm(zip(list(correlations.keys())[:-1], list(correlations.keys())[1:]))
+    pbar = tqdm(zip(list(correlations.keys())[:-1], list(correlations.keys())[1:]), total=len(correlations)-1)
     for epoch1, epoch2 in pbar:
         pbar.set_description(f"Correlation for pair {epoch1}->{epoch2}")
         orders1 = correlations[epoch1]
