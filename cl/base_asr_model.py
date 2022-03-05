@@ -504,7 +504,8 @@ class BaseASR(sb.core.Brain, ABC):
                 #      on 5th epoch: percentage *= 1.5^(4/5) = 0.1*1.383 = 0.12
                 #      on 30th epoch: percentage *= 1.5^(29/5) = 0.1*10.5 = 1.05 -> 1.0
                 assert increase_factor > 1, "Multiplicative should be above 1 since eitherwise the trainset will get shrinked to 0"
-                percentage = round(min(1, percentage*increase_factor**((dummy_epoch-1)/step_length)), 4)
+                epoch_to_use = max(update_every * (dummy_epoch-1), 2) - 1  # e.g. 1, 4, 9, 14...
+                percentage = round(min(1, percentage*increase_factor**(epoch_to_use/step_length)), 4)
                 logger.info(f"Subsampling using {percentage}% of the training set.")
             suffix = f"percentage={percentage}"
         else:
