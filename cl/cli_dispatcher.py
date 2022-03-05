@@ -7,7 +7,8 @@ from .info.get_train_times import main as get_train_times
 from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
 from .info.find_anomalies import _parse_args as test_anomalies, _get_parser as test_anomalies_parser
 from .info.plot_metric_per_length import _get_parser as parse_test_wrt_durations, _parse_args as plot_test_per_length
-from .info.log_corr import _get_parser as _get_corr_parser, _parse_args as _parse_corr_args
+# from .info.log_corr import _get_parser as _get_corr_parser, _parse_args as _parse_corr_args
+from .info.testset_correlation import _get_parser as _get_test_corr_parser, _parse_args as _parse_corr_args
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -145,10 +146,12 @@ def dispatch():
     # =============== BOXPLOTS ===================
     # ============================================
     corr_parser = subparsers.add_parser(
-        "correlations", aliases=["c"], help = "Calculate correlations between\
-            the different orderings provided by each curriculum method."
+        "correlations", aliases=["c"], help = "Calculate correlations model pairs.\
+            The output will be a horizontal barplot where each bar corresponds to \
+            the correlation of a pair. You should provide at least 1 pair of models \
+            containing a wer_test{suffix}.txt file each."
     )
-    corr_parser = _get_corr_parser(corr_parser)
+    corr_parser = _get_test_corr_parser(corr_parser)
     corr_parser.set_defaults(func=_parse_corr_args)
 
     args = parser.parse_args()
