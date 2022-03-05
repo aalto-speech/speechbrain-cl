@@ -12,22 +12,31 @@ def get_train_times(log_txt_pattern, silent=False):
     seeds = {}
     iterator = _get_iterator(log_txt_pattern)
     for path in iterator:
+        if "subsample" in path:
+            continue
         model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
         seed = os.path.basename(os.path.dirname(path)).split("-")[0]
         identifier = f"{model_id} ({seed})"
         # identifier = os.path.dirname(os.path.dirname(path))
         with open(path, 'r') as f:
-            epoch, mins = None, None
+            epoch, mins, last_epoch_seen = None, None, None
             minutes_per_epoch = {}
             for line in f:
                 if "Going into epoch" in line:
                     epoch = int(line.split()[-1].replace("\n", "").strip())
+                    last_epoch_seen = epoch
                     continue
                 if "Currently training for" in line:
                     mins = float(line.split("for ")[-1].split(" minutes")[0].strip())
                     if mins <= 0 or mins in minutes_per_epoch.values():
                         continue
-                    assert epoch is not None, "Model id: {}, Epoch: {}, mins: {}".format(identifier, epoch, mins)
+                    if epoch is None:
+                        assert last_epoch_seen is not None, "This shouldn't happen."
+                        if last_epoch_seen in minutes_per_epoch.keys():
+                            minutes_per_epoch[last_epoch_seen] = max(mins, minutes_per_epoch[last_epoch_seen])
+                            continue
+                    assert epoch is not None, "Model id: {}, Epoch: {}, mins: {}\nDict: {}".\
+                        format(identifier, epoch, mins, minutes_per_epoch)
                     minutes_per_epoch[epoch] = mins
                     epoch, mins = None, None
                     continue
@@ -127,28 +136,45 @@ def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     ax.legend()
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Train time (hours)")
-    axins = zoomed_inset_axes(ax, zoom=3, loc="lower right", borderpad=2)
+    if n_epochs > 50:
+        zoom = 10.5
+        x1, x2 = 73, 75.4
+        y1, y2 = 74.5, 78.5
+    elif n_epochs > 20:
+        zoom = 9
+        x1, x2 = 48.8, 50.2
+        y1, y2 = 174.5, 184.5
+    else:
+        zoom = 11
+        x1, x2 = 14.7, 15.1
+        y1, y2 = 156, 163.5
+    axins = zoomed_inset_axes(ax, zoom=zoom, loc="lower right", borderpad=6)
     # fix the number of ticks on the inset axes
     axins.yaxis.get_major_locator().set_params(nbins=7)
     axins.xaxis.get_major_locator().set_params(nbins=7)
     # sub region of the original image
-    x1, x2 = n_epochs-max(n_epochs//15, 2), n_epochs+1
-    y1, y2 = lowest_time-1, highest_time+1
-    axins.set_xlim(x1, x2)
-    axins.set_ylim(y1, y2)
+    # x1, x2 = n_epochs-max(n_epochs//15, 1.5), n_epochs+0.2
+    # y1, y2 = lowest_time-1, lowest_time + (highest_time-lowest_time)/2
     for identifier in plot_data:
         p = plot_data[identifier]
+        x_axis, y_axis = p['plot1']['args']
+        if not ((x1 <= x_axis[-1] <= x2) and (y1 <= y_axis[-1] <= y2)):
+            p['plot1']['kwargs'].pop('label')
         axins.plot(*p['plot1']['args'], **p['plot1']['kwargs'])
         best_epoch = p['text']['args'][0]
         best_wer = p['text']['args'][1]
         if best_epoch >= x1 and best_wer <= y2:
             axins.text(*p['text']['args'], **p['text']['kwargs'])
             axins.plot(*p['plot2']['args'], **p['plot2']['kwargs'])
+    axins.set_xlim(x1, x2)
+    axins.set_ylim(y1, y2)
+    axins.legend()
 
     # draw a bbox of the region of the inset axes in the parent axes and
     # connecting lines between the bbox and the inset axes area
     mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5")
-
+    plt.setp(ax.get_legend().get_texts(), fontsize='20') # for legend text
+    fig.tight_layout()
     if out_path is None:
         plt.show()
         return

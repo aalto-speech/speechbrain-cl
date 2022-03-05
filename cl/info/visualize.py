@@ -395,12 +395,25 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
     plt.title(f"Model Performances on Validation Set", fontsize=20)
     barplot_list = []
 
+    step = 2
+    if max_epoch > 50:
+        step = 15
+    elif max_epoch > 20:
+        step = 10
+    elif max_epoch > 15:
+        step = 5
     for i, identifier in enumerate(model_to_stats):
         # model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
         epochs, valid_metrics_dict = list(model_to_stats[identifier].values())
-        epochs = [int(e[0]) for e in epochs]
+        # epochs = [int(e[0]) for e in epochs]
+        epochs = list(range(0, max_epoch))[::step]
+        epochs[0] = 1  # start from epoch 1
+        epochs[-1] = max_epoch
         metric_vals = [min(100, vm[0]) for vm in valid_metrics_dict[metric]]
-        names = [identifier]*len(epochs)
+        last_score = metric_vals[-1]
+        metric_vals = metric_vals[::step]
+        metric_vals[-1] = last_score
+        names = ([identifier]*len(epochs))
         l = list(zip(names, epochs, metric_vals))
         barplot_list += l
     multiple_bar_plots(barplot_list, values_name=f"Metric: {metric}")
