@@ -413,6 +413,7 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
         last_score = metric_vals[-1]
         metric_vals = metric_vals[::step]
         metric_vals[-1] = last_score
+        print(identifier, max_epoch, last_score)
         names = ([identifier]*len(epochs))
         l = list(zip(names, epochs, metric_vals))
         barplot_list += l
