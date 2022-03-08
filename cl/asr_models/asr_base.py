@@ -108,9 +108,9 @@ class ASR_Old(BaseASR):
             # Process predictions and truth so that they don't contain special tokens (.br, .fr etc)
             predicted_words = [re.sub("\.\w+|-", "", ' '.join(txt)).strip().split() for txt in predicted_words]
             target_words = [re.sub("\.\w+|-", "", ' '.join(txt)).strip().split() for txt in target_words]
-            import random
-            if random.random() > 0.99:
-                print("  preds-truth pairs:", list(zip(predicted_words, target_words))[:1])
+            # import random
+            # if random.random() > 0.99:
+            #     print("  preds-truth pairs:", list(zip(predicted_words, target_words))[:1])
 
             self.wer_metric.append(ids, predicted_words, target_words)
             self.cer_metric.append(ids, predicted_words, target_words)

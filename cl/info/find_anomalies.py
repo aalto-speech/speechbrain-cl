@@ -1,4 +1,4 @@
-import argh
+import argparse
 import os
 import re
 from typing import Optional
@@ -11,7 +11,7 @@ DEFAULT_METRIC_THRESHOLD = 50.0  # i.e. we will keep all entries with a WER > 50
 def read_single(path, threshold=DEFAULT_METRIC_THRESHOLD, print_stats=True):
     assert os.path.exists(path), f"Could not locate {path=}"
     basename = os.path.basename(path)
-    is_wer = False if path.endswith("cer_test.txt") else True
+    is_wer = False if "cer_test" in path else True
     separate_func = lambda x: separate_test_entry(x, is_wer)
     with open(path, 'r', encoding='utf-8') as fr:
         # Before the FIRST_EXAMPLE_LINE line, we have general information 
@@ -69,9 +69,45 @@ def separate_test_entry(entry: str, is_wer: bool):
     return utt_id, score, ins, dels, subs, truth_reconstructed, preds_reconstructed, truth, preds
 
 
+def _get_parser(parser=None):
+    if parser is None:
+        parser = argparse.ArgumentParser()
+    parser.add_argument("paths", nargs="*", 
+        help="Path or paths to wer_test*.txt files."
+    )
+    parser.add_argument("--error-threshold", "-t", type=float, default=DEFAULT_METRIC_THRESHOLD, 
+        help="WER/CER/Whatever threshold below which the utterances are considered okay.")
+    parser.add_argument("--print-stats", "-p", action="store_true", default=False,
+        help="Whether to print the stats or not.")
+    parser.add_argument("--compare", "-c", action="store_true", default=False, 
+        help="If true then you must have provided pairs of paths to wer_test*.txt \
+            and cer_test*.txt file which will be compared.")
+    parser.add_argument("--out-log-path", "-ol", required=False, default=None,
+        help="Not implemented.")
+    return parser
+
+def _parse_args(args=None):
+    if args is None:
+        parser = _get_parser()
+        args = parser.parse_args()
+    else:
+        args.paths += args.exps
+    if args.compare:
+        n_paths = len(args.paths)
+        if n_paths % 2 != 0:
+            raise argparse.ArgumentTypeError("Since you used --compare, you must provide pairs of paths.")
+        wer_paths = [p for p in args.paths if "wer" in p]
+        cer_paths = [p for p in args.paths if "cer" in p]
+        print(wer_paths, cer_paths)
+        if len(wer_paths) != len(cer_paths):
+            raise argparse.ArgumentTypeError("You must provide an equal number of wer_test*.txt and cer_test*.txt files.")
+        for wer_path, cer_path in zip(wer_paths, cer_paths):
+            compare(cer_path, wer_path, args.error_threshold, args.out_log_path)
+    else:
+        for path in args.paths:
+            read_single(path, args.error_threshold, args.print_stats)
+
 # dispatching:
 
 if __name__ == '__main__':
-    parser = argh.ArghParser()
-    parser.add_commands([read_single, compare])
-    parser.dispatch()
+    _parse_args()

@@ -4,6 +4,11 @@ import argparse
 from .info.visualize import testset_boxplot_comparison, plot_logs_dispatcher
 from .info.statmd import get_args, statmd, _add_parser_args
 from .info.get_train_times import main as get_train_times
+from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
+from .info.find_anomalies import _parse_args as test_anomalies, _get_parser as test_anomalies_parser
+from .info.plot_metric_per_length import _get_parser as parse_test_wrt_durations, _parse_args as plot_test_per_length
+# from .info.log_corr import _get_parser as _get_corr_parser, _parse_args as _parse_corr_args
+from .info.testset_correlation import _get_parser as _get_test_corr_parser, _parse_args as _parse_corr_args
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -34,6 +39,44 @@ def dispatch():
             to the wer_test.txt files that don't exist."
     )
     wer_bp_parser.set_defaults(func=testset_boxplot_comparison)
+
+    # ============================================
+    # ======== TEST STATS W.R.T. DURATIONS =======
+    # ============================================
+    test_and_dur_parser = subparsers.add_parser(
+        "test_and_duration", aliases=["td"], help = "Print wer scores on the test set w.r.t. the durations of the utterances."
+    )
+    test_and_dur_parser = parse_test_wrt_durations(test_and_dur_parser)
+    test_and_dur_parser.set_defaults(func=plot_test_per_length)
+
+    # ============================================
+    # ============ PRINT TEST STATS ==============
+    # ============================================
+    testwer_parser = subparsers.add_parser(
+        "testwer", aliases=["tw"], help = "Print wer scores on the test set with the ability to make a barplot."
+    )
+    testwer_parser = test_wer_parser(testwer_parser)
+    testwer_parser = test_anomalies_parser(testwer_parser)
+    testwer_parser.add_argument(
+        "--find-anomalies", "-fa", action="store_true", default=False,
+        help="If provided then we are going to try to find anomalies in\
+            the provided wer_test*.txt or cer_test*.txt files and compare them\
+            if the --compare option is also provided."
+    )
+    def testwer_func(args):
+        if args.find_anomalies:
+            return test_anomalies(args)
+        if args.wer_suffix is None:
+            if args.vad:
+                args.wer_file = "wer_test_vadded.txt"
+            elif args.forced_segmented:
+                args.wer_file = "wer_test_forced_segmented.txt"
+            else:
+                args.wer_file = "wer_test.txt"
+        else:
+            args.wer_file = f"wer_test{args.wer_suffix}.txt"
+        read_wer_test(args.exps, args.wer_file, args.out_path, name_mappings_file=args.model_name_mappings)
+    testwer_parser.set_defaults(func=testwer_func)
 
     # ============================================
     # ======= PRINT TRAIN/DEV/TEST STATS =========
@@ -68,6 +111,11 @@ def dispatch():
         "--plot-valid-results", "-v", default=False, action="store_true",
         help="If provided then the validation set's performance progress will be plotted for each model."
     )
+    log_plot_parser.add_argument(
+        "--barplot", "-b", default=False, action="store_true",
+        help="If provided then instead of line plots we are going to plot\
+            grouped barplots (per epoch)."
+    )
     log_plot_parser = _add_parser_args(log_plot_parser)
     log_plot_parser.set_defaults(func=plot_logs_dispatcher)
 
@@ -93,6 +141,18 @@ def dispatch():
     train_times_parser.add_argument("--silent", "-s", default=False, action="store_true",
         help="If provided, the program won't throw NoEpochsTrained errors.")
     train_times_parser.set_defaults(func=get_train_times)
+
+    # ============================================
+    # =============== BOXPLOTS ===================
+    # ============================================
+    corr_parser = subparsers.add_parser(
+        "correlations", aliases=["c"], help = "Calculate correlations model pairs.\
+            The output will be a horizontal barplot where each bar corresponds to \
+            the correlation of a pair. You should provide at least 1 pair of models \
+            containing a wer_test{suffix}.txt file each."
+    )
+    corr_parser = _get_test_corr_parser(corr_parser)
+    corr_parser.set_defaults(func=_parse_corr_args)
 
     args = parser.parse_args()
     args.func(args)

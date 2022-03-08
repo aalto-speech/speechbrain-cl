@@ -1,3 +1,4 @@
+import copy
 import logging
 import time
 import random
@@ -378,12 +379,15 @@ class CurriculumDataset(DynamicItemDataset):
         logger.info("Saved the CL ordering under {}.".format(out_path))
 
 
+# TODO: This is more or less the same as FilteredSortedDynamicItemDataset. Converge the two.
 class CurriculumSubset(CurriculumDataset):
     def __init__(self, dataset: CurriculumDataset, indices: Sequence[int], *args, **kwargs) -> None:
         self.dataset = dataset
+        self.data = dataset.data
         self.indices = indices
-        # logger.info(f"{dataset.data=}")
-        super().__init__(data=dataset.data, *args, **kwargs)
+        self.data_ids = [data_id for idx, data_id in enumerate(self.data.keys()) if idx in indices]
+        # super().__init__(data=dataset.data, *args, **kwargs)
+        self.pipeline = copy.deepcopy(dataset.pipeline)
 
     def __getitem__(self, idx):
         if isinstance(idx, list):

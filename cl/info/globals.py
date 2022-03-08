@@ -7,6 +7,11 @@ MPL_COLORS = [
     "brown", "pink", "gray", "olive", "cyan", "purple"
 ]
 
+MPL_MARKERS = [
+    # "-", "--", "o", "<", ">", "s", "p", "*", "h", "H", "x", "D"
+    "o", ".", ">", "4", "8", "s", "p", "*", "h", "H", "X", "D"
+]
+
 MAPPINGS = {
     "Crdnn": "CRDNN",
     "Wer": "WER",

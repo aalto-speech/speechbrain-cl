@@ -55,7 +55,7 @@ from cl.asr_models import ASR, ASR_Old, AsrWav2Vec2
 from cl.curriculum import CurriculumDataset
 from cl.filelist_tokenizer import FileListTokenizer
 from cl.utils import normalize_text, strip_spaces
-from cl.vad import testset_pipeline_with_segments
+from cl.vad import testset_pipeline_with_segments, testset_pipeline_with_force_segments
 
 
 # torch.cuda.set_device(0)
@@ -155,7 +155,8 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
             os.mkdir(_save_folder)
         sorting_dict = asr_temp.create_curriculum_dict(
             train_set=asr_temp.train_set, 
-            sorting_dict_save_path=sorting_dict_log
+            sorting_dict_save_path=sorting_dict_log,
+            try_recover=False,
         )
         del train_dataset, pm_tokenizer, pretrained_hparams, asr_temp
         asr_brain.train_set = asr_brain.train_set.filtered_sorted(
@@ -288,15 +289,30 @@ def dataio_prepare(hparams, device):
 
     datasets = [train_data, valid_data]
     if hparams.get("use_vad", False):
-        test_data = testset_pipeline_with_segments(
-            test_set=test_data,
-            vad=hparams['VAD'](),
-            tokenizer=tokenizer,
-            sample_rate=hparams['sample_rate'],
-            bos_index=hparams['bos_index'],
-            eos_index=hparams['eos_index'],
-            max_duration_secs=hparams.get("max_duration_secs", 1e5)
-        )
+        max_dur = hparams.get("max_duration_secs", 50.)
+        min_dur = hparams.get("min_duration_secs", 1.)
+        if hparams.get("segment_forcefully_secs", -1.0) > min_dur:
+            test_data = testset_pipeline_with_force_segments(
+                test_set=test_data,
+                tokenizer=tokenizer,
+                overlap_duration_secs=hparams.get('overlap_duration_secs', 0.05),
+                sample_rate=hparams['sample_rate'],
+                bos_index=hparams['bos_index'],
+                eos_index=hparams['eos_index'],
+                max_duration_secs=hparams['segment_forcefully_secs'],
+                min_duration_secs=min_dur,
+            )
+        else:
+            test_data = testset_pipeline_with_segments(
+                test_set=test_data,
+                vad=hparams['VAD'](),
+                tokenizer=tokenizer,
+                sample_rate=hparams['sample_rate'],
+                bos_index=hparams['bos_index'],
+                eos_index=hparams['eos_index'],
+                max_duration_secs=max_dur,
+                min_duration_secs=min_dur,
+            )
     else:
         # Default audio pipeline for the test set
         datasets.append(test_data)
