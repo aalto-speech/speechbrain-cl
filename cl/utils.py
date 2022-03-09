@@ -1,8 +1,11 @@
+import ast
+import glob
 from typing import List, Callable, Optional, Union, Collection
 import os
 import re
 import logging
 import numpy as np
+from speechbrain.dataio.dataset import DynamicItemDataset
 import torch
 import subprocess
 
@@ -28,6 +31,9 @@ def checkpoint_wrapper_cl(func):
             return
         if not isinstance(dataloader, SaveableDataLoader):
             return dataloader
+        if brain.do_subsample:
+            # Don't try to load checkpoint when using a pacing function (subsampling)
+            return dataloader
         if hasattr(brain, 'train_subset'):
             train_len = len(brain.train_subset)
         else:
@@ -50,6 +56,72 @@ def checkpoint_wrapper_cl(func):
             # brain.hparams.epoch_counter.current += 1
         return dataloader
     return recover_if_applicable
+
+def calculate_dataset_hours(dataset: DynamicItemDataset, ids: Optional[List[str]] = None):
+    with dataset.output_keys_as(['duration', 'id']) as dataset_durs:
+        if isinstance(ids, list) and len(ids) < len(dataset.data):
+            data = [dataset.data[utt_id]['duration'] for utt_id in ids]
+            total_duration = sum(data)
+        else:
+            total_duration = sum(item['duration'] for item in dataset_durs)
+    return (total_duration/60)/60
+
+def calculate_total_hours_seen(
+        train_csv: str, 
+        n_epochs: int, 
+        is_paced: bool = False,
+        subsampling_n_epochs: Optional[int] = None
+    ):
+    assert os.path.isfile(train_csv), train_csv
+    assert isinstance(n_epochs, int) and n_epochs > 0, "n_epochs must be a positive integer."
+    total_hours_seen = 0.
+    dataset = curriculum.CurriculumDataset.from_csv(train_csv)
+    if is_paced:
+        assert isinstance(subsampling_n_epochs, int), "subsampling_n_epochs should define \
+            every how many epochs the pacing function is applied"
+        curr_logs_path = os.path.join(os.path.dirname(train_csv), 'curriculum_logs')
+        assert os.path.isdir(curr_logs_path), curr_logs_path
+        curr_log_files = glob.glob(os.path.join(curr_logs_path, "*.log"))
+        for i, f in enumerate(curr_log_files):
+            relevant_ids = list(load_sorting_dictionary(f).keys())
+            hours = calculate_dataset_hours(dataset, relevant_ids)
+            # The pacing function is applied every subsampling_n_epochs epochs
+            # so we need to take that into account.
+            hours *= min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
+            total_hours_seen += hours
+    else:
+        total_hours_seen = calculate_dataset_hours(dataset) * n_epochs
+    return total_hours_seen
+
+def load_sorting_dictionary(path):
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Could not locate the sorting dictionary under: {path}.")
+    with open(path, 'r') as fr:
+        sd = {}
+        for line in fr:
+            line = re.sub("\s+|\t", " ", line).strip()
+            try:
+                line = line.split()
+                utt_id = line[0]
+                score = " ".join(line[1:])
+            except ValueError as e:
+                logger.error(f"ValueError: '{str(e)}' occurred on line: {line.split()}")
+                raise e
+            sd[utt_id] = ast.literal_eval(score)
+    return sd
+
+def save_sorting_dictionary(dictionary: dict, path: str):
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Could not locate the sorting dictionary under: {path}.")
+    ordered_examples = [f"{k}\t{v}" for k, v in sorted(
+        dictionary.items(), 
+        key=lambda x: x[1], 
+        reverse=True
+    )]
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, 'w') as fa:
+        # fa.write("ID\tScore\n")
+        fa.write('\n'.join(ordered_examples))
 
 def min_max_normalize(
     c: Union[list, np.ndarray, int, float],
