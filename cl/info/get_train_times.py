@@ -5,6 +5,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
 from cl.info.globals import MPL_COLORS
+from cl.utils import calculate_total_hours_seen
 from .statmd import _read_stats, NoEpochsTrained
 
 def get_train_times(log_txt_pattern, silent=False):
@@ -182,6 +183,27 @@ def plot_train_times(log_txt_pattern, out_path=None, silent=False):
         out_path = "./train_times_per_epoch.png"
     print("Saving plot under:", os.path.abspath(out_path))
     plt.savefig(out_path)
+
+def hours_to_wers_plot(paths: list, train_csv_name="train-complete_segmented.csv"):
+    hours = {}
+    for directory in paths:
+        log = os.path.join(directory, "train_log.txt")
+        if not os.path.isfile(log): 
+            print(f"Ignoring {directory} since it does not contain a train_log.txt file.")
+            continue
+        model_name = os.path.basename(os.path.dirname(os.path.dirname(directory)))
+        seed = os.path.basename(os.path.dirname(directory)).split("-")[0]
+        identifier = f"{model_name} {seed}"
+        if identifier in hours: continue
+        train_csv = os.path.join(directory, train_csv_name)
+        with open(log, 'r') as fr:
+            n_epochs = [int(l.split("epoch:")[1].split(",")[0].strip()) for l in fr if l.startswith("epoch:")]
+            if len(n_epochs) < 15: continue
+            else: n_epochs = max(n_epochs)
+        if n_epochs < 15:
+            continue
+        hours[directory]= calculate_total_hours_seen(train_csv, n_epochs)
+
 
 def _get_best_epoch(log_txt_pattern, silent=False):
     paths = _get_iterator(log_txt_pattern)

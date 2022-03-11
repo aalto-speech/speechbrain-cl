@@ -253,7 +253,7 @@ class CurriculumDataset(DynamicItemDataset):
         hparams: Optional[dict] = None,
         noise_percentage: Optional[float] = None,
     ) -> FilteredSortedDynamicItemDataset:
-        if sort_key not in (self.CURRICULUM_KEYS + ['random']):
+        if sort_key not in (self.CURRICULUM_KEYS + ['random']) or (not sorting_dict):
             # If the function is not called for "curriculum learning" 
             # then use the default behavior
             filtered_sorted_ids = self._filtered_sorted_ids(
