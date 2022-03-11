@@ -549,7 +549,7 @@ class BaseASR(sb.core.Brain, ABC):
         # logger.info(f"{curr_log_path=}")
         if os.path.isfile(curr_log_path) and os.path.isfile(subset_ids_path):
             logger.info("Subsampling: Loading pre-existing CL dictionary.")
-            self.sorting_dict = self.load_sorting_dict(epoch=dummy_epoch, inplace=False)
+            self.sorting_dict = self.load_sorting_dict(sorting_dict_log=curr_log_path, inplace=False)
             if len(self.final_sortings) < len(self.sorting_dict) and self.use_fixed_sorting:
                 self.final_sortings = self.load_sorting_dict(epoch=0, inplace=False)
             shuffled_train_ids = np.load(subset_ids_path)
@@ -582,7 +582,6 @@ class BaseASR(sb.core.Brain, ABC):
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \
                 {len(shuffled_train_ids)} datapoints (out of {len(self.train_set)})."))
-        self.train_subset.pipeline = self.train_set.pipeline
         if (self.sorting in BaseASR.DURATION_CL_KEYS) or self.use_default_training:
             logger.info("Duration-based sorting + subsampling. This implies that the `noisy` CL method cannot be used.")
             train_set = self.train_subset.filtered_sorted(
@@ -596,10 +595,11 @@ class BaseASR(sb.core.Brain, ABC):
                 reverse=getattr(self.hparams, "reverse", False),
                 noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
             )
-        logger.info(f"Size of the 'subsampled' trainset: ${len(train_set)}")
+        logger.info(f"Size of the 'subsampled' trainset: {len(train_set)}")
         dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
         if not self.use_fixed_sorting:
             self.final_sortings = {}
+        logger.info(f"Sub dataloader of length: {len(dataloader)}")
         return dataloader
 
 
