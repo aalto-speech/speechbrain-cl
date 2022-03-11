@@ -31,9 +31,9 @@ def checkpoint_wrapper_cl(func):
             return
         if not isinstance(dataloader, SaveableDataLoader):
             return dataloader
-        if brain.do_subsample:
-            # Don't try to load checkpoint when using a pacing function (subsampling)
-            return dataloader
+        # if brain.do_subsample:
+        #     # Don't try to load checkpoint when using a pacing function (subsampling)
+        #     return dataloader
         if hasattr(brain, 'train_subset'):
             train_len = len(brain.train_subset)
         else:
@@ -111,8 +111,8 @@ def load_sorting_dictionary(path):
     return sd
 
 def save_sorting_dictionary(dictionary: dict, path: str):
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"Could not locate the sorting dictionary under: {path}.")
+    if not os.path.isdir(os.path.dirname(path)):
+        raise FileNotFoundError(f"Could not locate the directory of: {path}.")
     ordered_examples = [f"{k}\t{v}" for k, v in sorted(
         dictionary.items(), 
         key=lambda x: x[1], 
