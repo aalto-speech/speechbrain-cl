@@ -39,6 +39,7 @@ def testset_corr(
         name_mappings = None
     model_to_orders = {}
     df_dicts = []
+    wer_files = sorted(wer_files)  # sort based on the name of the files
     for i, wf in enumerate(wer_files):
         if not os.path.isfile(wf):
             print(f"Ignoring file {wf} since it doesn't exist.")

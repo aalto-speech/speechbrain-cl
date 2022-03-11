@@ -418,7 +418,9 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
         l = list(zip(names, epochs, metric_vals))
         barplot_list += l
     multiple_bar_plots(barplot_list, values_name=f"Metric: {metric}")
-    plt.legend(loc='upper right')
+    plt.legend(loc='upper right', prop={'size': 17})
+    plt.xticks(size = 17)
+    plt.yticks(size = 17)
     fig.tight_layout()
     if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
         print("Showing final plot...")
@@ -440,10 +442,21 @@ def multiple_bar_plots(barplot_list, values_name="Values"):
     g = sns.catplot(
         data=df, kind="bar",
         x="Epoch", y=values_name, hue="Model Name",
-        ci="sd", palette="dark", alpha=.6,
-        legend=False, height=12, aspect=16/12
+        ci="sd", palette="dark", alpha=.65,
+        legend=False, height=9, aspect=16.5/9
     )
     g.despine(left=True)
+    # extract the matplotlib axes_subplot objects from the FacetGrid
+    ax = g.facet_axis(0, 0)
+    # Set WER values as text on top of the barplots
+    for i in ax.patches:
+        wer = round((i.get_height()), 1)
+        # if wer != float('nan'):
+        #     wer = int(wer) if wer == int(wer) else wer
+        ax.text(i.get_x(), i.get_height()+0.2,
+                str(wer),
+                fontsize = 10, fontweight ='bold',
+                color ='grey')
 
 
 def plot_logs(paths, metrics=["PER"], output_path=None, print_seed=False):

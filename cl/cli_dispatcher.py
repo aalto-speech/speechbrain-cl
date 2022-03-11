@@ -66,15 +66,16 @@ def dispatch():
     def testwer_func(args):
         if args.find_anomalies:
             return test_anomalies(args)
+        prefix = "cer" if args.cer else "wer"
         if args.wer_suffix is None:
             if args.vad:
-                args.wer_file = "wer_test_vadded.txt"
+                args.wer_file = f"{prefix}_test_vadded.txt"
             elif args.forced_segmented:
-                args.wer_file = "wer_test_forced_segmented.txt"
+                args.wer_file = f"{prefix}_test_forced_segmented.txt"
             else:
-                args.wer_file = "wer_test.txt"
+                args.wer_file = f"{prefix}_test.txt"
         else:
-            args.wer_file = f"wer_test{args.wer_suffix}.txt"
+            args.wer_file = f"{prefix}_test{args.wer_suffix}.txt"
         read_wer_test(args.exps, args.wer_file, args.out_path, name_mappings_file=args.model_name_mappings)
     testwer_parser.set_defaults(func=testwer_func)
 

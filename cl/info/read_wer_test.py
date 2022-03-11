@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+from collections import defaultdict
 import random
 import os, glob
 import argparse
@@ -159,6 +160,8 @@ def _get_parser(parser=None):
         help="How should the wer txt file be named? Overrides the '-v' and '-f' options.")
     parser.add_argument("--out-path", "-o", required=False, default=None,
         help="Location of the output bar plot.")
+    parser.add_argument("--cer", action="store_true", default=False,
+        help="Use CER instead of WER.")
     parser.add_argument("--model-name-mappings", "-m", default=None, 
         help="Path to a .py file containing a dictionary with the keys\
               `curriculum_mappings`, `transfer_mappings` and `subset_mappings`.\
@@ -168,13 +171,14 @@ def _get_parser(parser=None):
 if __name__ == "__main__":
     parser = _get_parser()
     args = parser.parse_args()
+    prefix = "cer" if args.cer else "wer"
     if args.wer_suffix is None:
         if args.vad:
-            args.wer_file = "wer_test_vadded.txt"
+            args.wer_file = f"{prefix}_test_vadded.txt"
         elif args.forced_segmented:
-            args.wer_file = "wer_test_forced_segmented.txt"
+            args.wer_file = f"{prefix}_test_forced_segmented.txt"
         else:
-            args.wer_file = "wer_test.txt"
+            args.wer_file = f"{prefix}_test.txt"
     else:
-        args.wer_file = f"wer_test{args.wer_suffix}.txt"
+        args.wer_file = f"{prefix}_test{args.wer_suffix}.txt"
     read_wer_test(args.exps, args.wer_file, args.out_path)
