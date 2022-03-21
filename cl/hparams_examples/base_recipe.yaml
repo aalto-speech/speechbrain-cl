@@ -90,8 +90,8 @@ ckpt_interval_minutes: 30 # save checkpoint every N min
 # ============= PREATRAINED MODEL AREA ================
 # =====================================================
 
-# Use the ascending CL 100v2 as the pretrained model
-pretrained_model_hparams: !ref ahparams/noshards_fixed_text_100h_v2.yaml
+# Use the baseline as the pretrained model
+pretrained_model_hparams: !ref hparams/baseline.yaml
 use_fixed_sorting: True
 
 # =====================================================
