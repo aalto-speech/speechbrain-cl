@@ -34,10 +34,13 @@ train_loader_kwargs:
 do_subsample: True
 subsampling_percentage: 0.35
 subsampling_n_epochs: 3
+# additive or multiplicative
+subsampling_increase_type: multiplicative
 # Percentage of data to add every `subsampling_n_epochs` epochs
 # This percentage will not be added in a relative way.
 # This means that the maximum number of datapoints can be reached before reaching the final epoch
-subsampling_increase_factor: 0.1
+subsampling_increase_factor: 1.5
+subsampling_step_length: 5
 
 # Random noise
 # Percentage of noise to add among the easy examples.
@@ -56,22 +59,25 @@ noisy_random_percentage: 0.2
 
 # ['ascending', 'descending', 'random', 'seq_loss', 'ctc_loss', 'seq_ctc_loss', 'wer', 'cer', 'no']
 sorting: wer
+# If true then sort in descending order (hardest to easiest)
 reverse: False  # Valid for 'seq_loss', 'ctc_loss', 'seq_ctc_loss', 'wer', 'cer'
 
-default_sorting_epochs: 0
+# Number of epochs before curriculum learning is applied.
+default_sorting_epochs: 1
+# Gradient accumulation
 gradient_accumulation: 4
 gradient_clipping: 5.0
 
 output_neurons: 1750
 # data_folder_rirs: ./augmentation_data # noise/ris dataset will automatically be downloaded here
-output_folder: !ref exp/transfer_fixed_noisy_ga_<sorting>_subsample_incr/<seed>-<output_neurons>units/
+output_folder: !ref exps/transfer_fixed_noisy_ga_<sorting>_subsample_incr/<seed>-<output_neurons>units/
 save_folder: !ref <output_folder>/save
 train_log: !ref <output_folder>/train_log.txt
 
 train_dir: train-complete_segmented
 dev_dir: dev_segmented_10sec
-test_dir: test  #_segmented_10sec
-max_allowed_test_duration: 20.0
+test_dir: test_segmented_10sec
+max_allowed_test_duration: None
 
 data_folder: kaldi_files
 train_csv: !ref <output_folder>/<train_dir>.csv
@@ -95,15 +101,14 @@ use_fixed_sorting: True
 # =====================================================
 # ================= TOKENIZER AREA ====================
 # =====================================================
-# We remove utterances longer than 20s in the train/dev/test sets
-max_duration_secs: 20.0
-# Similarly for very short utterances
+# Maximum of 10s utterances in the train/dev/test sets
+max_duration_secs: 10.0
+# Remove very short utterances from the train/dev sets
 min_duration_secs: 1.0
 # Removal of special tokens such as .br, .fr etc
 remove_special_tokens: True
 token_type: bpe
 character_coverage: 1.0
-
 # =====================================================
 # =============== END TOKENIZER AREA ==================
 # =====================================================
@@ -121,7 +126,6 @@ VAD: !name:speechbrain.pretrained.VAD.from_hparams
     savedir: !ref <vad_savedir>
 collate_fn: !name:cl.batch.PaddedBatchVAD
     device: !ref <device>
-
 # =====================================================
 # ============== END VAD DECODING AREA ================
 # =====================================================
@@ -131,8 +135,8 @@ train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
     save_file: !ref <train_log>
 
 # Training parameters
-number_of_epochs: 30
-number_of_ctc_epochs: 15
+number_of_epochs: 15
+number_of_ctc_epochs: 10
 batch_size: 32
 valid_batch_size: 32
 test_batch_size: 1
