@@ -117,6 +117,10 @@ def dispatch():
         help="If provided then instead of line plots we are going to plot\
             grouped barplots (per epoch)."
     )
+    log_plot_parser.add_argument("--model-name-mappings", "-nm", default=None, 
+        help="Path to a .json file containing a dictionary with the keys\
+              `curriculum_mappings`, `transfer_mappings` and `subset_mappings`.\
+              This remains to be documented.")
     log_plot_parser = _add_parser_args(log_plot_parser)
     log_plot_parser.set_defaults(func=plot_logs_dispatcher)
 
@@ -141,6 +145,15 @@ def dispatch():
     )
     train_times_parser.add_argument("--silent", "-s", default=False, action="store_true",
         help="If provided, the program won't throw NoEpochsTrained errors.")
+    train_times_parser.add_argument("--show-hours-per-model", "--hpm", dest="show_hours_per_model", 
+        default=False, action="store_true", 
+        help="If provided then we are going to show the hours that each model has seen during its\
+        training. You also need to provide the `train_csv_name` argument in\
+        case it's not the default value."
+    )
+    train_times_parser.add_argument("--train_csv_name", "--csv", default="train-complete_segmented.csv",
+        help="What's the filename of the .csv file used for training the speechbrain model."
+    )
     train_times_parser.set_defaults(func=get_train_times)
 
     # ============================================

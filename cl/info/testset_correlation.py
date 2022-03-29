@@ -8,7 +8,7 @@ import seaborn as sns
 from scipy.stats import spearmanr, pearsonr
 from tqdm import tqdm
 import json
-from cl.info.read_wer_test import map_name
+from cl.info.globals import map_name
 from cl.info.globals import MPL_COLORS
 from cl.info.find_anomalies import SEPARATOR, FIRST_EXAMPLE_LINE
 # sns.set()

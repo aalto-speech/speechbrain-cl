@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 import matplotlib.pyplot as plt
-from cl.info.globals import MPL_COLORS
+from cl.info.globals import MPL_COLORS, map_name
 
 
 def read_wer_test(
@@ -119,32 +119,6 @@ def read_wer_test(
         plt.savefig(out_path)
     else:
         plt.show()
-
-def map_name(model_id, name_mappings):
-    if not name_mappings or not isinstance(name_mappings, dict):
-        return model_id
-    name = ""
-    for cl in name_mappings['curriculum_mappings']:
-        if cl in model_id:
-            name = name_mappings['curriculum_mappings'][cl]
-            break
-    if name == "":
-        print("Could not match model_id to a name.")
-        return model_id
-    for transfer_map in name_mappings['transfer_mappings']:
-        if transfer_map in model_id:
-            name += " " + name_mappings['transfer_mappings'][transfer_map]
-            break
-    for subset_name in name_mappings['subset_mappings']:
-        if subset_name in model_id:
-            name = "".join(["(", name_mappings['subset_mappings'][subset_name], ")", " ", name])
-            break
-    for other_name in name_mappings['other_mappings']:
-        if other_name in model_id:
-            name += " " + name_mappings['other_mappings'][other_name]
-            break
-    name = re.sub("\s+", " ", name)
-    return name
     
 
 def _get_parser(parser=None):
@@ -163,7 +137,7 @@ def _get_parser(parser=None):
     parser.add_argument("--cer", action="store_true", default=False,
         help="Use CER instead of WER.")
     parser.add_argument("--model-name-mappings", "-m", default=None, 
-        help="Path to a .py file containing a dictionary with the keys\
+        help="Path to a .json file containing a dictionary with the keys\
               `curriculum_mappings`, `transfer_mappings` and `subset_mappings`.\
               This remains to be documented.")
     return parser
