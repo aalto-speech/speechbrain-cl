@@ -53,6 +53,7 @@ import webdataset as wds
 
 from cl.asr_models import ASR, ASR_Old, AsrWav2Vec2
 from cl.curriculum import CurriculumDataset
+from cl.methods.frequency_cl import FrequencyCL
 from cl.filelist_tokenizer import FileListTokenizer
 from cl.utils import normalize_text, strip_spaces
 from cl.vad import testset_pipeline_with_segments, testset_pipeline_with_force_segments
@@ -220,8 +221,10 @@ def dataio_prepare(hparams, device):
     #    lines = lines[:1501]
     # with open(hparams['train_csv'], 'w', encoding='utf-8') as fw:
     #    fw.writelines(lines)
+
+    DatasetClass = FrequencyCL if hparams['sorting'] in FrequencyCL.VALID_FREQUENCY_TYPES else CurriculumDataset
     
-    train_data = CurriculumDataset.from_csv(
+    train_data = DatasetClass.from_csv(
         csv_path=hparams["train_csv"],
         replacements={"data_root": data_folder},
     )

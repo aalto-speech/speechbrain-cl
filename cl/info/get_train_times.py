@@ -1,4 +1,6 @@
 import argparse
+import json
+from operator import sub
 import os
 import glob
 from collections import Counter
@@ -89,6 +91,7 @@ def get_train_times(log_txt_pattern, silent=False):
 def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     model_to_times = get_train_times(log_txt_pattern, silent)
     model_to_best_val = _get_best_epoch(log_txt_pattern, silent)
+    print(model_to_times)
     n_models = len(model_to_times)
     fig = plt.figure(figsize=(20, 14))
     fig.suptitle('Train Times', fontsize=25)
@@ -184,7 +187,10 @@ def plot_train_times(log_txt_pattern, out_path=None, silent=False):
     print("Saving plot under:", os.path.abspath(out_path))
     plt.savefig(out_path)
 
-def hours_to_wers_plot(paths: list, train_csv_name="train-complete_segmented.csv"):
+def hours_to_wers_plot(
+        paths: list, 
+        train_csv_name="train-complete_segmented.csv"
+    ):
     hours = {}
     for directory in paths:
         log = os.path.join(directory, "train_log.txt")
@@ -202,7 +208,20 @@ def hours_to_wers_plot(paths: list, train_csv_name="train-complete_segmented.csv
             else: n_epochs = max(n_epochs)
         if n_epochs < 15:
             continue
-        hours[directory]= calculate_total_hours_seen(train_csv, n_epochs)
+        is_paced = ("subsampl" in directory)
+        subsampling_n_epochs = None
+        if is_paced:
+            with open(os.path.join(directory, "hyperparams.yaml")) as fr:
+                subsampling_n_epochs = [l for l in fr if l.startswith("subsampling_n_epochs:")]
+            if len(subsampling_n_epochs) != 1:
+                raise ValueError("Could not find the subsampling_n_epochs attribute even though a pacing function is used.")
+            subsampling_n_epochs = int(subsampling_n_epochs[0].split()[-1].replace("\n", "").strip())
+        hours[directory]= calculate_total_hours_seen(
+            train_csv, n_epochs, 
+            is_paced=is_paced,
+            subsampling_n_epochs=subsampling_n_epochs
+        )
+    print(json.dumps(hours))
 
 
 def _get_best_epoch(log_txt_pattern, silent=False):
@@ -263,12 +282,25 @@ def _parse_args(parser=None):
         help="If provided, the output plot (assuming -v is also provided) will be saved there.")
     parser.add_argument("--silent", "-s", default=False, action="store_true",
         help="If provided, the program won't throw NoEpochsTrained errors.")
+    parser.add_argument("--show-hours-per-model", "--hpm", dest="show_hours_per_model", 
+        default=False, action="store_true", 
+        help="If provided then we are going to show the hours that each model has seen during its\
+        training. You also need to provide the `train_csv_name` argument in\
+        case it's not the default value.")
+    parser.add_argument("--train_csv_name", "--csv", default="train-complete_segmented.csv",
+        help="What's the filename of the .csv file used for training the speechbrain model.")
     args = parser.parse_args()
     return args
 
 def main(args):
     if args.visualize:
         plot_train_times(args.input, args.out_plot_path, args.silent)
+    elif args.show_hours_per_model:
+        if args.train_csv_name is None:
+            raise argparse.ArgumentTypeError("You should provide the \
+                `train_csv_name` argument in order to see the hours \
+                    that each model has seen during training.")
+        hours_to_wers_plot(args.input, args.train_csv_name)
     else:
         get_train_times(args.input, args.silent)
 

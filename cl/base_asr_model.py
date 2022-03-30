@@ -24,6 +24,7 @@ from speechbrain.dataio.batch import PaddedBatch
 # from speechbrain.dataio.dataloader import SaveableDataLoader
 from speechbrain.dataio.dataset import DynamicItemDataset, FilteredSortedDynamicItemDataset
 from .curriculum import CurriculumDataset, CurriculumSubset
+from .methods.frequency_cl import FrequencyCL
 from .utils import (
     checkpoint_wrapper_cl, strip_spaces, 
     load_sorting_dictionary, save_sorting_dictionary
@@ -47,7 +48,8 @@ YamlTupleSafeLoader.add_constructor(
 class BaseASR(sb.core.Brain, ABC):
 
     DURATION_CL_KEYS = ['ascending', 'descending']
-    VALID_CL_KEYS = ['ascending', 'descending', 'random']  + CurriculumDataset.CURRICULUM_KEYS
+    VALID_CL_KEYS = ['ascending', 'descending', 'random']  + \
+        CurriculumDataset.CURRICULUM_KEYS + FrequencyCL.VALID_FREQUENCY_TYPES
 
     def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
                  checkpointer=None, sorting=None, train_set=None, train_loader_kwargs=None,
@@ -308,7 +310,7 @@ class BaseASR(sb.core.Brain, ABC):
                 ckpt_prefix="not-training-",
             )
             logger.info(f"On stage start: After subsample. Type of train_set: {type(self.train_set)}.")
-            if sub_dataloader is not None:
+            if sub_dataloader is not None:  # it is a tuple at this point.
                 return sub_dataloader
             else:
                 msg = f"`do_subsample` is true but not used."
@@ -497,6 +499,7 @@ class BaseASR(sb.core.Brain, ABC):
         # After how many epochs should we update the train set
         update_every = getattr(self.hparams, 'subsampling_n_epochs', 5)
         dummy_epoch = self.current_epoch//update_every + 1
+        calculated_dict = False
         if isinstance(increase_factor, float) and increase_factor > 0:
             if increase_type in ['additive', '+']:
                 percentage = round(min(1.0, percentage+(increase_factor)*(dummy_epoch-1)), 4)
@@ -508,7 +511,7 @@ class BaseASR(sb.core.Brain, ABC):
                 assert increase_factor > 1, "Multiplicative should be above 1 since eitherwise the trainset will get shrinked to 0"
                 epoch_to_use = max(update_every * (dummy_epoch-1), 2) - 1  # e.g. 1, 4, 9, 14...
                 percentage = round(min(1, percentage*increase_factor**(epoch_to_use/step_length)), 4)
-                logger.info(f"Subsampling using {percentage}% of the training set.")
+                logger.info(f"Subsampling using {percentage*100}% of the training set.")
             suffix = f"percentage={percentage}"
         else:
             suffix = f"epoch={dummy_epoch}"
@@ -534,7 +537,7 @@ class BaseASR(sb.core.Brain, ABC):
             else:
                 train_set = self.train_set
             if isinstance(train_set, FilteredSortedDynamicItemDataset):
-                # logger.warning(f"Using curriculum subset for filteredsorted dataset. ERROR?")
+                logger.info(f"Using curriculum subset for filteredsorted dataset. {self.use_default_training=}")
                 # train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
                 shuffled_train_ids = [train_set.data_ids[i] for i in shuffled_train_ids]
                 train_subset = FilteredSortedDynamicItemDataset(train_set, shuffled_train_ids)
@@ -547,7 +550,17 @@ class BaseASR(sb.core.Brain, ABC):
                 raise TypeError(f"Cannot subsample train set of type {type(train_set)} ({self.sorting=}).")
             return train_subset
         # logger.info(f"{curr_log_path=}")
-        if os.path.isfile(curr_log_path) and os.path.isfile(subset_ids_path):
+        if percentage >= 1 and self.use_fixed_sorting:
+            if len(self.final_sortings) > len(self.sorting_dict):
+                self.sorting_dict = self.final_sortings.copy()
+            else:
+                # sorting_dict and final_sortings are filled.
+                # The epoch0 dictionary must exist since it is created 
+                # before the 1st epoch.
+                self.load_sorting_dict(epoch=0, inplace=True)
+            shuffled_train_ids = np.arange(0, len(self.train_set))
+            self.train_subset = get_train_subset(shuffled_train_ids)
+        elif os.path.isfile(curr_log_path) and os.path.isfile(subset_ids_path):
             logger.info("Subsampling: Loading pre-existing CL dictionary.")
             self.sorting_dict = self.load_sorting_dict(sorting_dict_log=curr_log_path, inplace=False)
             if len(self.final_sortings) < len(self.sorting_dict) and self.use_fixed_sorting:
@@ -576,6 +589,8 @@ class BaseASR(sb.core.Brain, ABC):
                         ckpt_prefix=ckpt_prefix,
                         try_recover=False,  # always re-iterate the dataloader so that the sorting-dict will be calculated from scratch
                     )
+                    calculated_dict = True
+                    logger.info(f"Created a curriculum dictionary of size: {len(self.sorting_dict)=}.")
                     if len(self.sorting_dict) > len(shuffled_train_ids):
                         logger.warning(f"CREATED A CURRICULUM OF SIZE {len(self.sorting_dict)} WHILE THE SUBSET SHOULD BE OF LENGTH {len(shuffled_train_ids)}.")
                         self.sorting_dict = {k: v for k, v in self.sorting_dict.items() if k in self.train_subset.data_ids}
@@ -595,12 +610,13 @@ class BaseASR(sb.core.Brain, ABC):
                 reverse=getattr(self.hparams, "reverse", False),
                 noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
             )
-        logger.info(f"Size of the 'subsampled' trainset: {len(train_set)}")
+        logger.info(f"Size of the 'subsampled' trainset: {len(train_set)} and type: {type(train_set)} \
+            \nwhile type of train_subset: {type(self.train_subset)=}.")
         dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
         if not self.use_fixed_sorting:
             self.final_sortings = {}
         logger.info(f"Sub dataloader of length: {len(dataloader)}")
-        return dataloader
+        return (dataloader, calculated_dict)
 
 
     def is_ctc_active(self, stage):

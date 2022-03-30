@@ -1,4 +1,6 @@
 import enum
+import itertools
+import json
 import math
 import os
 from collections import Counter, defaultdict
@@ -15,7 +17,7 @@ import numpy as np
 from .statmd import NoEpochsTrained, _read_stats, get_args, _read_args
 from .find_anomalies import read_single
 from .get_train_times import _find_best_epoch
-from cl.info.globals import MPL_COLORS, MAPPINGS, MPL_MARKERS
+from cl.info.globals import DARK_COLORS, MPL_COLORS, MAPPINGS, MPL_MARKERS, map_name
 sns.set()
 
 
@@ -94,7 +96,7 @@ def plot_valid_results(paths, metric="WER", output_path=None):
     n_models = len(model_to_stats)
         # model_to_stats[model_id]["valid_metrics_dict"] = [vm1[0]+vm2[0] for vm1, vm2 in zip(model_to_stats[model_id]["valid_metrics_dict"][metric], valid_metrics_dict[metric])]
         # model_to_stats[model_id]["seeds"].append(seed)
-        
+
     random.shuffle(MPL_COLORS)
     random.shuffle(MPL_MARKERS)
     # MPL_COLORS = MPL_COLORS*(1+n_models//len(MPL_COLORS))[:n_models]
@@ -138,7 +140,7 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         vm_best_wer = [y for ind, y in enumerate(vms) if ind == best_epoch_index][0]
         vm_best_wer = min(max_allowed_wer, vm_best_wer)
         ax.plot(x_axis, vms, marker=random_markers[i], linewidth=4, label=f"{identifier}", color=random_colors[i])
-        
+
         if best_epoch_index > start_epoch and vm_best_wer<=max_allowed_wer:
             ax.text(best_valid_epoch, vm_best_wer, f"{best_valid_wer}")
             ax.plot([best_valid_epoch], [vm_best_wer], random_markers[i], ms=14, color=random_colors[i])
@@ -150,14 +152,14 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         ax.legend(loc='upper left')
         plot_data[identifier] = {
             "plot1": {
-                "args": [x_axis, vms], 
+                "args": [x_axis, vms],
                 "kwargs": {"marker": random_markers[i], "linewidth": 4, "label": f"{identifier}", "color": random_colors[i]}
             },
             "text": {
                 "args": [best_valid_epoch, vm_best_wer, f"{best_valid_wer}"], "kwargs": {}
             },
             "plot2": {
-                "args": [[best_valid_epoch], [vm_best_wer], random_markers[i]], 
+                "args": [[best_valid_epoch], [vm_best_wer], random_markers[i]],
                 "kwargs": {"ms": 14, "color": random_colors[i]}
             }
         }
@@ -190,7 +192,11 @@ def plot_valid_results(paths, metric="WER", output_path=None):
         print("Saving plot under:", output_path)
         plt.savefig(output_path)
 
-def plot_train_valid_loss(paths, output_path=None):
+def plot_train_valid_loss(
+        paths, output_path=None,
+        name_mappings_file=None,
+        include_n_runs: bool = False,
+    ):
     model_to_stats = {}
     # n_models = 0
     max_epoch = 0
@@ -198,6 +204,11 @@ def plot_train_valid_loss(paths, output_path=None):
     min_val = 200
     stats = {}
     max_loss = 0
+    if name_mappings_file and os.path.isfile(name_mappings_file):
+        with open(name_mappings_file, 'r') as f:
+            name_mappings = json.loads(f.read())
+    else:
+        name_mappings = None
     for path in paths:
         try:
             epochs, train_losses, valid_losses, _ = _read_stats([path])
@@ -229,7 +240,7 @@ def plot_train_valid_loss(paths, output_path=None):
             stats[model_id]["seeds"].append(seed)
         else:
             stats[model_id] = {
-                "epochs": [epochs], 
+                "epochs": [epochs],
                 "train_losses": [train_losses],
                 "valid_losses": [valid_losses],
                 "seeds": [seed],
@@ -241,6 +252,7 @@ def plot_train_valid_loss(paths, output_path=None):
         return l_list
     for model_id, d in stats.items():
         n_curr_models = len(d['seeds'])
+        model_id = map_name(model_id, name_mappings)
         if n_curr_models == 1:
             identifier = f"{model_id} ({d['seeds'][0]})"
             model_to_stats[identifier] = {
@@ -277,7 +289,7 @@ def plot_train_valid_loss(paths, output_path=None):
                         "valid_losses": d['valid_losses'][i],
                     }
     n_models = len(model_to_stats)
-        
+
     random.shuffle(MPL_COLORS)
     random.shuffle(MPL_MARKERS)
     # MPL_COLORS = MPL_COLORS*(1+n_models//len(MPL_COLORS))[:n_models]
@@ -291,12 +303,12 @@ def plot_train_valid_loss(paths, output_path=None):
     elif max_epoch > 15:
         step = 2
 
-    random_colors = (MPL_COLORS * (1+(n_models*2)//len(MPL_COLORS)))[:n_models*2]
+    random_colors = (DARK_COLORS * (1+(n_models*2)//len(DARK_COLORS)))[:n_models*2]
     random_markers = (MPL_MARKERS * (1+(n_models*2)//len(MPL_MARKERS)))[:n_models*2]
     # fig = plt.figure(figsize=(16, 12))
-    fig, axes = plt.subplots(math.ceil(len(model_to_stats)/2), 2, sharey=True, figsize=(16,12))
-    fig.suptitle('Model Performances', fontsize=25)
-    plt.title(f"Model Performances on Validation Set")
+    fig, axes = plt.subplots(2, math.ceil(len(model_to_stats)/2), sharex=True, figsize=(5.5,7))
+    # fig.suptitle('Model Performances', fontsize=25)
+    # plt.title(f"Model Performances on Validation Set")
     x_axis = list(range(1, max_epoch+1))
     print("Number of models:", len(model_to_stats))
     for i, identifier in enumerate(model_to_stats):
@@ -305,35 +317,35 @@ def plot_train_valid_loss(paths, output_path=None):
         tls = [tl[0] for tl in train_losses]
         vls = [vl[0] for vl in valid_losses]
         x_axis = [int(e[0]) for e in epochs]
-        x_axis = list(range(len(epochs)))
+        x_axis = list(range(1, len(epochs)+1))
 
         # Plot possition
         if len(model_to_stats) == 1:
             current_ax = axes
         else:
-            current_ax = axes[i//2][i%2] if len(model_to_stats)>2 else axes[i]
-        d2 = {
-            "Epoch": x_axis,
-            "Train Loss": tls,
-            "Valid Loss": vls,
-        }
+            current_ax = axes[i]# axes[i//2][i%2] if len(model_to_stats)>2 else axes[i]
+        if not include_n_runs:
+            identifier = identifier.split("(")[0]
         assert len(x_axis) == len(tls) == len(vls)
-        sns.regplot(x=list(range(len(epochs))), y=tls,
+        sns.regplot(x=x_axis, y=tls,
             ci=None, scatter=False, order=4, label=f"Train Loss: {identifier}",
-            ax=current_ax, color=random_colors[i*2]
+            ax=current_ax, color='black',#random_colors[i*2]
         )
-        sns.regplot(x=list(range(len(epochs))), y=vls,
+        sns.regplot(x=x_axis, y=vls,
             ci=None, scatter=False, order=4, label=f"Valid Loss: {identifier}",
-            ax=current_ax, color=random_colors[i*2+1]
+            ax=current_ax, color='dimgray',#random_colors[i*2+1],
+            line_kws={'linewidth':3, 'linestyle': '--'}
         )
-        current_ax.set_title(f"Model: {identifier}")
+        current_ax.set_title(f"{identifier}", fontsize=17)
         # current_ax.set_xticks(list(range(0, max_epoch+1, step)))
-        current_ax.legend(loc='upper right')
+        current_ax.legend(loc='upper right', fontsize=15)
         # current_ax.set_xlim([0, max_epoch+step])
         # current_ax.set_ylim([min(min_train, min_val)-1, max_loss])
-        current_ax.set_xlabel("Epoch")
+        if i > 0:
+            current_ax.set_xlabel("Epoch")
+        # current_ax.set_xticklabels(x_axis)
         current_ax.set_ylabel("Loss")
-    
+
     fig.tight_layout()
     if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
         print("Showing final plot...")
@@ -342,11 +354,22 @@ def plot_train_valid_loss(paths, output_path=None):
         print("Saving plot under:", output_path)
         plt.savefig(output_path)
 
-def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
+def valid_scores_grouped_bp(
+        paths,
+        metric='WER',
+        output_path=None,
+        name_mappings_file=None,
+        include_n_runs: bool = False,
+    ):
     model_to_stats = {}
     # n_models = 0
     stats = {}
     max_epoch = 0
+    if name_mappings_file and os.path.isfile(name_mappings_file):
+        with open(name_mappings_file, 'r') as f:
+            name_mappings = json.loads(f.read())
+    else:
+        name_mappings = None
     for path in paths:
         try:
             epochs, _, _, valid_metrics_dict = _read_stats([path], [metric])
@@ -366,6 +389,7 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
         else:
             stats[model_id] = {"epochs": [epochs], "valid_metrics_dicts": [valid_metrics_dict], "seeds": [seed]}
     for model_id, d in stats.items():
+        model_id = map_name(model_id, name_mappings)
         n_curr_models = len(d['seeds'])
         if n_curr_models == 1:
             identifier = f"{model_id} ({d['seeds'][0]})"
@@ -391,11 +415,10 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
                 for i, s in enumerate(d['seeds']):
                     identifier = f"{model_id} ({s})"
                     model_to_stats[identifier] = {"epochs": d["epochs"][i], "valid_metrics_dict": d['valid_metrics_dicts'][i]}
-    fig = plt.figure(figsize=(16, 12))
-    plt.title(f"Model Performances on Validation Set", fontsize=20)
+    fig = plt.figure(figsize=(9, 7))
     barplot_list = []
 
-    step = 2
+    step = 3
     if max_epoch > 50:
         step = 15
     elif max_epoch > 20:
@@ -405,6 +428,8 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
     for i, identifier in enumerate(model_to_stats):
         # model_id = os.path.basename(os.path.dirname(os.path.dirname(path)))
         epochs, valid_metrics_dict = list(model_to_stats[identifier].values())
+        if not include_n_runs:
+            identifier = identifier.split("(")[0]
         # epochs = [int(e[0]) for e in epochs]
         epochs = list(range(0, max_epoch))[::step]
         epochs[0] = 1  # start from epoch 1
@@ -417,10 +442,10 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
         names = ([identifier]*len(epochs))
         l = list(zip(names, epochs, metric_vals))
         barplot_list += l
-    multiple_bar_plots(barplot_list, values_name=f"Metric: {metric}")
-    plt.legend(loc='upper right', prop={'size': 17})
-    plt.xticks(size = 17)
-    plt.yticks(size = 17)
+    multiple_bar_plots(barplot_list, values_name=f"{metric}")
+    plt.legend(loc='upper right', prop={'size': 25})
+    plt.xticks(size = 19)
+    plt.yticks(size = 19)
     fig.tight_layout()
     if (output_path is None) or not (os.path.isdir(os.path.dirname(output_path))):
         print("Showing final plot...")
@@ -430,9 +455,11 @@ def valid_scores_grouped_bp(paths, metric='WER', output_path=None):
         plt.savefig(output_path)
 
 
-def multiple_bar_plots(barplot_list, values_name="Values"):
+def multiple_bar_plots(barplot_list, values_name="Values", show_text=False):
     import pandas as pd
+    sns.set(font_scale=2)
     names, epochs, metric_vals = zip(*barplot_list)
+    n_models = len(set(names))
     d = {
         "Model Name": names,
         "Epoch": epochs,
@@ -440,23 +467,39 @@ def multiple_bar_plots(barplot_list, values_name="Values"):
     }
     df = pd.DataFrame(d)
     g = sns.catplot(
-        data=df, kind="bar",
+        data=df, kind="bar", color=plt.cm.gray,
+        palette=sns.color_palette("dark:#D6D6D6"),
         x="Epoch", y=values_name, hue="Model Name",
-        ci="sd", palette="dark", alpha=.65,
-        legend=False, height=9, aspect=16.5/9
+        ci="sd",
+        # palette="dark",
+        alpha=.65,
+        legend=False, height=9, aspect=16.5/9,
     )
-    g.despine(left=True)
-    # extract the matplotlib axes_subplot objects from the FacetGrid
+    plt.setp(g.ax.patches, linewidth=1, edgecolor="k")
     ax = g.facet_axis(0, 0)
-    # Set WER values as text on top of the barplots
-    for i in ax.patches:
-        wer = round((i.get_height()), 1)
-        # if wer != float('nan'):
-        #     wer = int(wer) if wer == int(wer) else wer
-        ax.text(i.get_x(), i.get_height()+0.2,
-                str(wer),
-                fontsize = 10, fontweight ='bold',
-                color ='grey')
+    hatch_markers = ['/', '\\', '-', '+', 'x', '*', 'O', 'o', '.']
+    hatches = []
+    for i in range(len(names)//n_models):
+        hatches += [hatch_markers[i]]*n_models
+    print(hatches, n_models)
+    for i, bar in enumerate(ax.patches):
+        # if i % num_locations == 0:
+        hatch = hatches[i]
+        bar.set_hatch(hatch)
+    g.fig.set_size_inches(11, 6)
+    g.despine(left=True)
+    if show_text:
+        # extract the matplotlib axes_subplot objects from the FacetGrid
+        ax = g.facet_axis(0, 0)
+        # Set WER values as text on top of the barplots
+        for i in ax.patches:
+            wer = round((i.get_height()), 1)
+            # if wer != float('nan'):
+            #     wer = int(wer) if wer == int(wer) else wer
+            ax.text(i.get_x(), i.get_height()+0.2,
+                    str(wer),
+                    fontsize = 10, fontweight ='bold',
+                    color ='grey')
 
 
 def plot_logs(paths, metrics=["PER"], output_path=None, print_seed=False):
@@ -535,7 +578,7 @@ def _testset_boxplot_single(wer_file, model_name=None, max_allowed_score=250.0, 
         l = f.readlines()[0]
         wer = float(l.split(metric)[1].split("[")[0].strip())
     print(f"| {wer_file.split('seq2seq/')[1]}\t|\t{wer}\t|\t{int(sum(ins))}\t|\t{int(sum(dels))}\t|\t{int(sum(subs))}\t|")
-    
+
     return changes
 
 def testset_boxplot_comparison(args):
@@ -590,15 +633,15 @@ def testset_boxplot_comparison(args):
         print(f"Figure saved under: {out_path}")
     else:
         plt.show()
-        
+
 def plot_logs_dispatcher(args):
     paths, metrics, output_path, _ = _read_args(args)
     if args.plot_valid_results is True:
         if args.barplot is False:
             return plot_valid_results(paths, metrics[0], output_path)
-        return valid_scores_grouped_bp(paths, metrics[0], output_path)
+        return valid_scores_grouped_bp(paths, metrics[0], output_path, args.model_name_mappings)
     # return plot_logs(paths, metrics, output_path, args.print_seed)
-    return plot_train_valid_loss(paths, output_path)
+    return plot_train_valid_loss(paths, output_path, args.model_name_mappings)
 
 def main():
 

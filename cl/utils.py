@@ -8,6 +8,7 @@ import numpy as np
 from speechbrain.dataio.dataset import DynamicItemDataset
 import torch
 import subprocess
+from tqdm import tqdm
 
 from cl import curriculum
 import speechbrain as sb
@@ -27,9 +28,19 @@ def checkpoint_wrapper_cl(func):
     """
     def recover_if_applicable(brain, stage, epoch):
         dataloader = func(brain, stage, epoch)
+        has_dict_been_recalculated = False
+        if isinstance(dataloader, tuple) and len(dataloader) == 2:
+            # subsampling result
+            dataloader, has_dict_been_recalculated = dataloader
         if stage != sb.Stage.TRAIN:
             return
         if not isinstance(dataloader, SaveableDataLoader):
+            return dataloader
+        if has_dict_been_recalculated:
+            # We don't want to reload a checkpoint after having
+            # recalculated the sorting dictionary (i.e. when using
+            # a pacing function).
+            logger.warning("NOT LOADING A CHECKPOINT SINCE WE JUST CREATED THE DICTIONARY.")
             return dataloader
         # if brain.do_subsample:
         #     # Don't try to load checkpoint when using a pacing function (subsampling)
@@ -70,7 +81,8 @@ def calculate_total_hours_seen(
         train_csv: str, 
         n_epochs: int, 
         is_paced: bool = False,
-        subsampling_n_epochs: Optional[int] = None
+        subsampling_n_epochs: Optional[int] = None,
+        is_fixed: bool = False,
     ):
     assert os.path.isfile(train_csv), train_csv
     assert isinstance(n_epochs, int) and n_epochs > 0, "n_epochs must be a positive integer."
@@ -81,14 +93,40 @@ def calculate_total_hours_seen(
             every how many epochs the pacing function is applied"
         curr_logs_path = os.path.join(os.path.dirname(train_csv), 'curriculum_logs')
         assert os.path.isdir(curr_logs_path), curr_logs_path
-        curr_log_files = glob.glob(os.path.join(curr_logs_path, "*.log"))
-        for i, f in enumerate(curr_log_files):
-            relevant_ids = list(load_sorting_dictionary(f).keys())
-            hours = calculate_dataset_hours(dataset, relevant_ids)
+        shuffled_ids_paths = glob.glob(os.path.join(curr_logs_path, "*.npy"))
+        epochs_seen = 1
+        for i, f in tqdm(enumerate(shuffled_ids_paths)):
+            relevant_ids = np.load(f)
+            # print(f"{type(dataset)=}\n{type(dataset.data)=}\n{relevant_ids.shape}")
+            data = [dataset.data[data_id]['duration'] for idx, data_id in enumerate(dataset.data.keys()) if idx in relevant_ids]
+            hours = (sum(data)/60)/60
             # The pacing function is applied every subsampling_n_epochs epochs
             # so we need to take that into account.
-            hours *= min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
+            if i == 0:
+                hours *= (subsampling_n_epochs-1)
+                epochs_seen += subsampling_n_epochs-1
+            elif i == len(shuffled_ids_paths)-1:
+                # At the last epoch we get the remaining hours
+                hours *= max(1, n_epochs-epochs_seen)
+                pass
+            else:
+                epochs_seen += min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
+                hours *= min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
             total_hours_seen += hours
+        print("Saw {} epochs that saw {} hours of data.".format(epochs_seen, total_hours_seen))
+        # curr_log_files = glob.glob(os.path.join(curr_logs_path, "*.log"))
+        # for i, f in enumerate(curr_log_files):
+        #     if f.endswith("=0.log"):
+        #         is_fixed = True
+        #         continue
+        #     if i >= 2 and is_fixed:
+        #         raise ValueError("With fixed sortings, there shouldn't be more than 2 curriculum log dictionaries.")
+        #     relevant_ids = list(load_sorting_dictionary(f).keys())
+        #     hours = calculate_dataset_hours(dataset, relevant_ids)
+        #     # The pacing function is applied every subsampling_n_epochs epochs
+        #     # so we need to take that into account.
+        #     hours *= min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
+        #     total_hours_seen += hours
     else:
         total_hours_seen = calculate_dataset_hours(dataset) * n_epochs
     return total_hours_seen
