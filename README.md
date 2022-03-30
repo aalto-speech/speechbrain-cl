@@ -66,16 +66,33 @@ python -m pip install -e cl
 - **Subsample-incremental CL**: Same as above, but every `N` epochs we also increase the percentage of the training set that we are going to use for training.
 - **Noisy CL**: Can we used with any of the above methods (except *No sorting* and *Duration-based*). It separates the training set into three categories: easy, medium-level and hard examples (the distinction happens by usign the sortings provided from the methods above). It then procceeds to add some hard and medium-level examples among the easy ones. This has helped with overfitting issues.
 
+NOTE: The *Subsample* methods refer to curriculum learning with a combination of a scoring and a pacing function. The latter controls the flow with which the model sees the available training data. Check the subsampling area of the example recipe for more details.
+
 
 ## How to Use
 
 1. Clone the project.
 2. (Optional) Create a virtual env.
 3. Install the package: `python -m pip install -e .` (in editable mode).
-4. Create a `.yaml` hyperparameters file. Check `cl/hparams_examples` for an example. This is not very well documented yet.
+4. Create a `.yaml` hyperparameters file. Check `cl/examples/hyperparameters.yaml` for an example. This is not very well documented yet.
+5. Copy the `train.py` file under `cl/examples` and adjust it to your needs. TODO: Maybe add the training option as part of the CLI.
+
+### Adjustment of the hyperparameters
+
+Choosing a CL method:
+
+- `wer`: metric-based scoring function that uses the word error rate to rank the training samples. This means that a decoding pass is required at each training epoch.
+- `cer`: similar to `wer` but uses character error rate instead.
+- `seq_loss`: loss-based scoring function using the sequence-to-sequence loss to rank the training samples.
+- `seq_ctc_loss`: Also uses the CTC loss values if CTC training is enabled.
+- `ctc_loss`: CTC only loss-based scoring function.
+- `random`: randomly shuffles the training data at the start of the first epoch. The same ranking will be kept even if you stop and resume training.
+- `no`: the training set is read as it is and no re-ordering occurs. This can be seen as a special case of the `random` method.
+- `ascending` and `descending`: duration-based CL.
+- `char`/`word`/`token`: The ordering of the training samples occurs before the first epoch (just like with duration-based cl), but the criterion for the score of each utterance is the amount of rare characters/words/tokens in their content.
 
 ## TODO:
 
 - Fill readme with instructions.
-- Document how `cl/hparams_examples/` work.
+- Add the training option as part of the CLI (the `prepare_dataset` function should be taken as an argument).
 - Add tests.
