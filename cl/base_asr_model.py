@@ -24,7 +24,7 @@ from speechbrain.dataio.batch import PaddedBatch
 # from speechbrain.dataio.dataloader import SaveableDataLoader
 from speechbrain.dataio.dataset import DynamicItemDataset, FilteredSortedDynamicItemDataset
 from .curriculum import CurriculumDataset, CurriculumSubset
-from .methods.frequency_cl import FrequencyCL
+from .methods.frequency_cl import FilteredSortedFrequencyCL, FrequencyCL
 from .utils import (
     checkpoint_wrapper_cl, strip_spaces, 
     load_sorting_dictionary, save_sorting_dictionary
@@ -143,7 +143,7 @@ class BaseASR(sb.core.Brain, ABC):
     @property
     def use_default_training(self):
         return (self.current_epoch <= getattr(self.hparams, 'default_sorting_epochs', 1)) and \
-            (self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []))
+            (self.sorting in CurriculumDataset.CURRICULUM_KEYS)
     
     # Abstract methods MUST be implemented by the user.
     @abstractmethod
@@ -385,11 +385,13 @@ class BaseASR(sb.core.Brain, ABC):
             # logger.info(f"On stage start: After load and sort. Type of train_set: {type(self.train_set)}.")
             return dataloader
         
-        # logger.info(f"On stage start: Before any method. Type of train_set: {type(self.train_set)}.")
         # ############################################################
-        # ########## CASE 6: Default Duration-Base Sorters ###########
+        # ######## CASE 6: Metadata-based Scoring Functions ##########
         # ############################################################
         if self.sorting not in CurriculumDataset.CURRICULUM_KEYS:
+            # it will only be saved on the first epoch
+            self._save_curriculum_log(stage, epoch, self.sorting_dict)
+            # The train data loader contains the already sorted data set
             return
         # ############################################################
         # ####### CASE 7: Default Ascending Sorting (for CL) #########
@@ -536,11 +538,14 @@ class BaseASR(sb.core.Brain, ABC):
                 )
             else:
                 train_set = self.train_set
-            if isinstance(train_set, FilteredSortedDynamicItemDataset):
+            if isinstance(train_set, FilteredSortedDynamicItemDataset) or isinstance(train_set, FilteredSortedFrequencyCL):
+                DatasetClass, kwargs = FilteredSortedDynamicItemDataset, {}
+                if isinstance(train_set, FilteredSortedFrequencyCL):
+                    DatasetClass, kwargs = FilteredSortedFrequencyCL, train_set.kwargs
                 logger.info(f"Using curriculum subset for filteredsorted dataset. {self.use_default_training=}")
                 # train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
                 shuffled_train_ids = [train_set.data_ids[i] for i in shuffled_train_ids]
-                train_subset = FilteredSortedDynamicItemDataset(train_set, shuffled_train_ids)
+                train_subset = DatasetClass(train_set, shuffled_train_ids, **kwargs)
             elif isinstance(train_set, DataLoader):
                 # For random sorting
                 raise NotImplementedError(f"Cannot subsample a dataloader train set of type {type(self.train_set)} ({self.sorting=}).")
@@ -853,6 +858,7 @@ class BaseASR(sb.core.Brain, ABC):
             return
         if self._curriculum_log_saved is True or stage != sb.Stage.TRAIN or (not self.sorting_dict_needs_save):
             return
+        print(f"{self.train_set=} \nTYPE: {type(self.train_set)=}")
         def __save__(sorting_dict_log, ordered_examples):
             with open(sorting_dict_log, 'w') as fa:
                 # fa.write("ID\tScore\n")
@@ -867,30 +873,35 @@ class BaseASR(sb.core.Brain, ABC):
                 os.mkdir(save_folder)
             sorting_dict_log = os.path.join(save_folder, f"{self.dict_log_prefix}{self.sorting}_dict-epoch={epoch}.log")
             ordered_examples = [f"{k}\t{v}" for k, v in sorted(sorting_dict.items(), key=lambda x: x[1], reverse=True)]
-        elif isinstance(getattr(self, 'train_set', None), FilteredSortedDynamicItemDataset) and self.sorting != "random":
+        elif isinstance(self.train_set, (FilteredSortedDynamicItemDataset, FilteredSortedFrequencyCL)) \
+          and self.sorting != "random":
             # Output path
             sorting_dict_log = os.path.join(self.hparams.output_folder, f"{self.dict_log_prefix}{self.sorting}_dict.log")
             if os.path.isfile(sorting_dict_log):
                 return
-            # These are the keys in sorted order
-            data_ids = self.train_set.data_ids
-            sort_key = "duration"
-            temp_keys = (set([] if self.sorting is None else [sort_key]))
-            filtered_ids = []
-            with self.train_set.output_keys_as(temp_keys):
-                for i, data_id in enumerate(data_ids):
-                    data_point = self.train_set.data[data_id]
-                    data_point["id"] = data_id
-                    computed = self.train_set.pipeline.compute_outputs(data_point)
-                    # Add (main sorting index, current index, data_id)
-                    # So that we maintain current sorting and don't compare
-                    # data_id values ever.
-                    filtered_ids.append((computed[sort_key], i, data_id))
-            # Here we will only save the ids of the sorted dataset since
-            # we don't have any values.
-            # `reverse` is always true so it doesn't matter if we have ascending
-            # or descneding-based curriculum.
-            ordered_examples = [f"{tup[2]}\t{tup[0]}" for tup in sorted(filtered_ids, reverse=True)]
+            if self.sorting in FrequencyCL.VALID_FREQUENCY_TYPES:
+                ordered_dict = self.train_set.get_frequencies()
+                ordered_examples = [f"{key}\t{value}" for key, value in sorted(ordered_dict.items(), key=lambda x: x[1], reverse=True)]
+            else:
+                # These are the keys in sorted order
+                data_ids = self.train_set.data_ids
+                sort_key = "duration"
+                temp_keys = (set([] if self.sorting is None else [sort_key]))
+                filtered_ids = []
+                with self.train_set.output_keys_as(temp_keys):
+                    for i, data_id in enumerate(data_ids):
+                        data_point = self.train_set.data[data_id]
+                        data_point["id"] = data_id
+                        computed = self.train_set.pipeline.compute_outputs(data_point)
+                        # Add (main sorting index, current index, data_id)
+                        # So that we maintain current sorting and don't compare
+                        # data_id values ever.
+                        filtered_ids.append((computed[sort_key], i, data_id))
+                # Here we will only save the ids of the sorted dataset since
+                # we don't have any values.
+                # `reverse` is always true so it doesn't matter if we have ascending
+                # or descneding-based curriculum.
+                ordered_examples = [f"{tup[2]}\t{tup[0]}" for tup in sorted(filtered_ids, reverse=True)]
         else:
             raise NotImplementedError(f"Could not save sorting dict for method {self.sorting}\
                 when the type of the train set is {type(self.train_set)}.")

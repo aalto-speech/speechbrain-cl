@@ -222,12 +222,22 @@ def dataio_prepare(hparams, device):
     # with open(hparams['train_csv'], 'w', encoding='utf-8') as fw:
     #    fw.writelines(lines)
 
-    DatasetClass = FrequencyCL if hparams['sorting'] in FrequencyCL.VALID_FREQUENCY_TYPES else CurriculumDataset
-    
-    train_data = DatasetClass.from_csv(
-        csv_path=hparams["train_csv"],
-        replacements={"data_root": data_folder},
-    )
+
+    # Get tokenizer
+    tokenizer = get_tokenizer(hparams, device)
+
+    if hparams['sorting'] in FrequencyCL.VALID_FREQUENCY_TYPES:
+        train_data = FrequencyCL.from_csv(
+            csv_path=hparams["train_csv"],
+            replacements={"data_root": data_folder},
+            frequency_type=hparams['sorting'],
+            tokenizer=tokenizer,
+        )
+    else:
+        train_data = CurriculumDataset.from_csv(
+            csv_path=hparams["train_csv"],
+            replacements={"data_root": data_folder},
+        )
 
     if hparams["sorting"] in train_data.CURRICULUM_KEYS:
         # In this case the training set will change at the start of every epoch
@@ -236,6 +246,18 @@ def dataio_prepare(hparams, device):
         # when sorting do not shuffle in dataloader ! otherwise is pointless
         hparams["dataloader_options"]["shuffle"] = False
         train_data.sorting = hparams["sorting"]
+    
+    elif hparams['sorting'] in FrequencyCL.VALID_FREQUENCY_TYPES:
+        # In this case the training set will change only now based on char/word/token frequencies.
+        logger.info(f"Curriculum learning with '{hparams['sorting']}' sorting...")
+        # when sorting do not shuffle in dataloader ! otherwise is pointless
+        hparams["dataloader_options"]["shuffle"] = False
+        train_data = train_data.filtered_sorted(
+            sort_key=hparams['sorting'],
+            reverse=hparams.get("reverse", False),
+            noise_percentage=hparams.get('noisy_random_percentage', None),
+        )
+        print(f"Lenght of sorted dataset: {len(train_data)=}")
 
     elif hparams["sorting"] == "ascending":
         # we sort training data to speed up training and get better results.
@@ -286,9 +308,6 @@ def dataio_prepare(hparams, device):
     if hparams.get("sort_test_set", True):
         # We also sort the test data
         test_data = test_data.filtered_sorted(sort_key="duration")
-
-    # Get tokenizer
-    tokenizer = get_tokenizer(hparams, device)
 
     datasets = [train_data, valid_data]
     if hparams.get("use_vad", False):
