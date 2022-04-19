@@ -50,8 +50,8 @@ class FrequencyCL(CurriculumDataset):
             self.calculate_frequency = self._calculate_token_frequency
             if self.tokenizer is None:
                 raise NoTokenizerError(f"The 'token' CL method requires you to provide a tokenizer.")
-            assert isinstance(self.tokenize, SentencePiece) or \
-                isinstance(self.tokenize, FileListTokenizer), "You should provide a valid tokenizer."
+            assert isinstance(self.tokenizer, SentencePiece) or \
+                isinstance(self.tokenizer, FileListTokenizer), "You should provide a valid tokenizer."
         else:
             raise InvalidFrequencyType(f"Invalid type of frequency calculator: {self.frequency_type}")
 
