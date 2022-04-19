@@ -11,7 +11,10 @@ from typing import (
 # from collections.abc import Iterable
 import numpy as np
 from tqdm import tqdm
-from . import utils
+from cl.utils import (
+    strip_spaces, normalize_dict, 
+    normalize_only_durs, normalize_with_confs
+)
 # from .classes import (
 #     MetricCurriculum, LossCurriculum, 
 #     JointCurriculum, BaseCurriculum
@@ -23,16 +26,150 @@ from speechbrain.dataio.dataset import (
     FilteredSortedDynamicItemDataset
 )
 from speechbrain.utils.distributed import run_on_main
-
-
-strip_spaces = lambda s: utils.strip_spaces(s)
+# from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
+
+class CurriculumBase(DynamicItemDataset):
+    def split_into_k(self, 
+      k: int, 
+      reverse: Optional[bool] = False, 
+      sorting_dict: Optional[dict] = None,
+      incremental: Optional[bool] = False,
+    ):
+        """
+        Arguments:
+            k: Number of difficulty groups. E.g. if `reverse` is False then the first
+               group will contain the easiest examples and the last one the hardest ones.
+            reverse: If true then the subsets will be returned by order "hardest to easiest".
+            sorting_dict: The dictionary containing utterance ids as keys and scores as values.
+            incremental: If true then each consecutive sub-array will also contain the previous 
+              samples.
+        Returns:
+            A list of `k` numpy arrays of equal length. If incremental is True then
+            each array A_i will contain A_{i-1} + A_i.
+        """
+        sorting_dict = sorting_dict or {}
+        if len(self.sorting_dict) == 0 and len(sorting_dict) == 0:
+            raise ValueError("The class' dictionary is empty, so you need to pass a valid `sorting_dict` argument.")
+        sorting_dict = sorting_dict or self.sorting_dict
+        sorted_ids = sorted(sorting_dict, key=lambda x: sorting_dict[x], reverse=reverse)
+        splitted = np.array_split(sorted_ids, k)
+        if not incremental:
+            return splitted
+        out = [None]*len(splitted)
+        out[0] = splitted[0]
+        for i, arr in enumerate(splitted[1:]):
+            out[i+1] = np.concatenate((out[i], arr), axis=0)
+        return out
+
+    def adaptive_pacing(self,
+        sorting_dict: dict,
+        n_difficulty_groups: int,
+        epochs_per_group: int,
+        incremental: bool = True,
+        noise_percentage: Optional[float] = None,
+        normalize: Optional[bool] = True,
+        reverse: Optional[bool] = False,
+    ):
+        """
+        Arguments:
+            sorting_dict: The sorting dictionary (scores of each utterance).
+            n_difficulty_groups: Number of difficulty groups. Check CurriculumDataset.split_into_k
+                for more information.
+            epochs_per_group: On how many epochs should each group be used for training?
+                E.g. if 2, then the easiest group will be used for 2 epochs, then the
+                     next group will be used for the next 2 epochs, and so on.
+            incremental: If true then each subsequent subset will also contain the easy 
+                examples taken from the previous subset. Check CurriculumDataset.split_into_k for more.
+            noise_percentage: For noisy CL. Check CurriculumDataset.filtered_sorted_ids and 
+                self.add_random_noise for more.
+            normalize: Whether or not the sorting dictionary should be normalized. Notice that
+                this normalization is IN-PLACE if inplace is True. The same normalization happens in
+                CurriculumDataset._curriculum_filtered_ids
+            reverse: Descending sorting?
+        """
+        if not isinstance(sorting_dict, dict) or len(sorting_dict) == 0:
+            raise ValueError(f"Invalid sorting dictionary of type: {type(sorting_dict)}.")
+        if normalize:
+            sorting_dict = self.normalize_dict(sorting_dict)
+        paced_sorted_ids = self.split_into_k(
+            k=n_difficulty_groups,
+            reverse=reverse,
+            sorting_dict=sorting_dict,
+            incremental=incremental
+        )
+        # self.adaptive_pacing_index is a tuple (in the form of a numpy array)
+        # whose first element is the index of paced_sorted_ids which we will use,
+        # and the second element is the number of epoch that this index has been used.
+        # If the second element is greater than epochs_per_group then we move on to the
+        # next group.
+        if not hasattr(self, "adaptive_pacing_index"):
+            self.adaptive_pacing_index = np.array((0, 0))
+        elif self.adaptive_pacing_index[0] >= len(paced_sorted_ids)-1:
+            logger.warning(strip_spaces(f"The adaptive pacing index has reached the maximum number \
+                of groups ({self.adaptive_pacing_index}). We will keep increasing the \
+                number of epochs that this group has been used, though. Is this intentional?"))
+        current_indices = paced_sorted_ids[self.adaptive_pacing_index[0]]
+        logger.info(f"Number of training samples in the current group: {len(current_indices)}")
+        # Increase the number of epochs this group has been used for.
+        self.adaptive_pacing_index[1] += 1
+        # If the number of epochs exceeds the `epochs_per_group` then
+        # we move to the next group.
+        if self.adaptive_pacing_index[1] >= epochs_per_group and self.adaptive_pacing_index[0] < len(paced_sorted_ids)-1:
+            self.adaptive_pacing_index[0] += 1
+            self.adaptive_pacing_index[1] = 0
+        self.adaptive_pacing_index[0] = min(self.adaptive_pacing_index[0], len(paced_sorted_ids)-1)
+        if isinstance(noise_percentage, float) and 0.0 < noise_percentage <= 1.0:
+            current_indices = self.add_random_noise(current_indices, noise_percentage)
+            logger.info("Added some random noise among the easy examples.")
+        return FilteredSortedDynamicItemDataset(self, current_indices)
+    
+    @classmethod
+    def add_random_noise(cls, id_list: List[str], noise_percentage: float = 0.15):
+        assert 0.0 < noise_percentage < 1
+        # Step 1: Split list in 3 parts: [easy examples] [medium examples] [hard examples]
+        n_ids = len(id_list)
+        _n = n_ids // 3
+        easy_ids = id_list[:_n]
+        medium_ids = id_list[_n:_n*2]
+        hard_ids = id_list[_n*2:]
+        n_noisy_samples = int(noise_percentage*len(easy_ids))
+        # Step 2: 60% of the noise will come from the hard samples and 40% from the medium ones
+        n_samples_hard = round(0.6*n_noisy_samples)
+        n_samples_med = round(0.4*n_noisy_samples)
+        n_samples = n_samples_med + n_samples_hard  # avoid rounding errors, redo sum
+        # Step 3: Sample some random ids.
+        hard_samples = random.sample(hard_ids, n_samples_hard)
+        # take non-common elements, in other words remove the sampled elements from the 
+        # list of hard_ids since they will be moved to the "easy" list
+        hard_ids = list(set(hard_ids) ^ set(hard_samples))
+        medium_samples = random.sample(medium_ids, n_samples_med)
+        # Similarly as with the hard ids
+        medium_ids = list(set(medium_ids) ^ set(medium_samples))
+        # Step 4: Sample an equivalent number of ids from the easy samples.
+        #         These ids are the ones that are going to be replaced.
+        easy_sample_ids = random.sample(range(len(easy_ids)), n_samples)
+        for sample_index in easy_sample_ids:
+            if len(hard_samples) > 0:
+                # First add all hard samples and then move to the medium ones
+                new_val = hard_samples.pop()
+                list_to_append = hard_ids  # just a reference
+            else:
+                new_val = medium_samples.pop()
+                list_to_append = medium_ids
+            old_val = easy_ids[sample_index]
+            easy_ids[sample_index] = new_val
+            list_to_append.append(old_val)
+        out = easy_ids + medium_ids + hard_ids
+        # logger.info(f"Initial id list: {id_list[:20]}\nFinal id list: {out[:20]}")
+        assert len(out) == len(id_list), f"{len(out)=} != {len(id_list)=}\n{out=}\n{id_list=}"
+        return out
 
 """ A wrapper around `DynamicItemDataset` which will change the way the dataset
     is sorted. In addition, it aims at filtering out the "hard" examples.
 """
-class CurriculumDataset(DynamicItemDataset):
+class CurriculumDataset(CurriculumBase):
     # TODO: Add the curriculum specific method-names here.
     CURRICULUM_KEYS = ['ctc_loss', 'seq_loss', 'seq_ctc_loss', 'wer', 'cer']
     LOSS_SORTERS = ['ctc_loss', 'seq_loss', 'seq_ctc_loss']
@@ -114,14 +251,7 @@ class CurriculumDataset(DynamicItemDataset):
         filtered_trainset = FilteredSortedDynamicItemDataset(self, filtered_sorted_ids)
         return filtered_trainset
 
-    def _curriculum_filtered_ids(
-        self,
-        sorting_dict: Dict[str, Union[float, Tuple[float, float], Tuple[float, float, float]]],
-        reverse: bool = False,
-        select_n: Optional[int] = None,
-        debug: bool = False,  # set to True to make some extra assertions
-        epsilon: float = 1e-3,
-    ) -> List[str]:
+    def normalize_dict(self, sorting_dict, select_n: Optional[int]=None, epsilon: float = 1e-3,):
         select_n = select_n or (getattr(self, "current_epoch_n_datapoints", None) or len(sorting_dict))
         select_n = round(select_n)
         # logger.info(f"Will select {select_n} datapoints out of {len(sorting_dict)} in total.")
@@ -130,16 +260,26 @@ class CurriculumDataset(DynamicItemDataset):
             # Then we need to sort the dictionary based on a 
             # combination of the loss/metric value and the
             # utterance's duration and/or confidence.
-            sorting_dict = utils.normalize_with_confs(sorting_dict, epsilon)
+            sorting_dict = normalize_with_confs(sorting_dict, epsilon)
             # import json
             # logger.info(f"Sorting Dict:{json.dumps(sorting_dict, indent=4)}")
         elif self.sorting in self.METRIC_SORTERS:
             # In this case the value of the dictionary is a single float
             # Normalize to [0, 1] (min-max normalization)
-            sorting_dict = utils.normalize_dict(sorting_dict)
+            sorting_dict = normalize_dict(sorting_dict)
         elif self.sorting in self.LOSS_SORTERS and isinstance(sd0, tuple) and len(sd0) == 2:
-            sorting_dict = utils.normalize_only_durs(sorting_dict)
-        # sort the ids (dict keys) based on their value and keep N
+            sorting_dict = normalize_only_durs(sorting_dict)
+        return sorting_dict
+
+    def _curriculum_filtered_ids(
+        self,
+        sorting_dict: Dict[str, Union[float, Tuple[float, float], Tuple[float, float, float]]],
+        reverse: bool = False,
+        select_n: Optional[int] = None,
+        debug: bool = False,  # set to True to make some extra assertions
+        epsilon: float = 1e-3,
+    ) -> List[str]:
+        sorting_dict = self.normalize_dict(sorting_dict, select_n=select_n, epsilon=epsilon)
         filtered_sorted_ids: list = [i for i in sorted(
             sorting_dict,
             key=lambda x: sorting_dict[x],
@@ -160,48 +300,6 @@ class CurriculumDataset(DynamicItemDataset):
     def _on_curriculum_end(self, brain: sb.core.Brain, original_keys: dict, sorting_dict: dict = None):
         # Used to save a checkpoint. Could be useful for multi-gpu
         pass
-    
-    @classmethod
-    def add_random_noise(cls, id_list: List[str], noise_percentage: float = 0.15):
-        assert 0.0 < noise_percentage < 1
-        # Step 1: Split list in 3 parts: [easy examples] [medium examples] [hard examples]
-        n_ids = len(id_list)
-        _n = n_ids // 3
-        easy_ids = id_list[:_n]
-        medium_ids = id_list[_n:_n*2]
-        hard_ids = id_list[_n*2:]
-        n_noisy_samples = int(noise_percentage*len(easy_ids))
-        # Step 2: 60% of the noise will come from the hard samples and 40% from the medium ones
-        n_samples_hard = round(0.6*n_noisy_samples)
-        n_samples_med = round(0.4*n_noisy_samples)
-        n_samples = n_samples_med + n_samples_hard  # avoid rounding errors, redo sum
-        # Step 3: Sample some random ids.
-        hard_samples = random.sample(hard_ids, n_samples_hard)
-        # take non-common elements, in other words remove the sampled elements from the 
-        # list of hard_ids since they will be moved to the "easy" list
-        hard_ids = list(set(hard_ids) ^ set(hard_samples))
-        medium_samples = random.sample(medium_ids, n_samples_med)
-        # Similarly as with the hard ids
-        medium_ids = list(set(medium_ids) ^ set(medium_samples))
-        # Step 4: Sample an equivalent number of ids from the easy samples.
-        #         These ids are the ones that are going to be replaced.
-        easy_sample_ids = random.sample(range(len(easy_ids)), n_samples)
-        for sample_index in easy_sample_ids:
-            if len(hard_samples) > 0:
-                # First add all hard samples and then move to the medium ones
-                new_val = hard_samples.pop()
-                list_to_append = hard_ids  # just a reference
-            else:
-                new_val = medium_samples.pop()
-                list_to_append = medium_ids
-            old_val = easy_ids[sample_index]
-            easy_ids[sample_index] = new_val
-            list_to_append.append(old_val)
-        out = easy_ids + medium_ids + hard_ids
-        # logger.info(f"Initial id list: {id_list[:20]}\nFinal id list: {out[:20]}")
-        assert len(out) == len(id_list), f"{len(out)=} != {len(id_list)=}\n{out=}\n{id_list=}"
-        return out
-
         
     @classmethod
     def _save_ordering(cls, filtered_sorted_ids: list, model_folder: str, epoch: int):

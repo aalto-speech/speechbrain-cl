@@ -23,7 +23,7 @@ from speechbrain.utils.distributed import run_on_main
 from speechbrain.dataio.batch import PaddedBatch
 # from speechbrain.dataio.dataloader import SaveableDataLoader
 from speechbrain.dataio.dataset import DynamicItemDataset, FilteredSortedDynamicItemDataset
-from .curriculum import CurriculumDataset, CurriculumSubset
+from .curriculum import CurriculumBase, CurriculumDataset, CurriculumSubset
 from .methods.frequency_cl import FilteredSortedFrequencyCL, FrequencyCL
 from .utils import (
     checkpoint_wrapper_cl, strip_spaces, 
@@ -50,6 +50,7 @@ class BaseASR(sb.core.Brain, ABC):
     DURATION_CL_KEYS = ['ascending', 'descending']
     VALID_CL_KEYS = ['ascending', 'descending', 'random']  + \
         CurriculumDataset.CURRICULUM_KEYS + FrequencyCL.VALID_FREQUENCY_TYPES
+    CURRICULUM_KEYS = CurriculumDataset.CURRICULUM_KEYS
 
     def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
                  checkpointer=None, sorting=None, train_set=None, train_loader_kwargs=None,
@@ -121,6 +122,22 @@ class BaseASR(sb.core.Brain, ABC):
     @property
     def do_subsample(self):
         return getattr(self.hparams, 'do_subsample', False)
+
+    @property
+    def do_adaptive_pacing(self):
+        return getattr(self.hparams, 'do_adaptive_pacing', False)
+    
+    @property
+    def reverse(self):
+        return getattr(self.hparams, "reverse", False)
+    
+    @property
+    def epochs_per_adaptive_group(self):
+        return getattr(self.hparams, "epochs_per_adaptive_group", 2)
+    
+    @property
+    def incremental_adaptive_pacing(self):
+        return getattr(self.hparams, "incremental_adaptive_pacing", True)
     
     @property
     def curriculum_update_every(self):
@@ -272,7 +289,27 @@ class BaseASR(sb.core.Brain, ABC):
             ):
                 self.train_set = self.make_random_dataloader()
             # logger.info(f"On stage start: After random. Type of train_set: {type(self.train_set)}.")
-            return self.train_set        
+            return self.train_set      
+        
+        # ############################################################
+        # ############ CASE 3: Adaptive Pacing Function ##############
+        # ############################################################
+        if self.do_adaptive_pacing and len(self.sorting_dict) < len(self.train_set):
+            logger.warning(f"Using an adaptive pacing function is not possible\
+                with an empty or non-full sorting dictionary ({self.sorting_dict=}).")
+        if self.do_adaptive_pacing and len(self.sorting_dict) > 0:
+            logger.info(f"Using and adaptive pacing function on a sorting dictionary of length: {len(self.sorting_dict)}.")
+            train_set = self.adaptive_pacing(
+                n_epochs=self.hparams.number_of_epochs,
+                epochs_per_group=self.epochs_per_adaptive_group,
+                incremental=self.incremental_adaptive_pacing,
+                normalize=False,
+                inplace_norm=False
+            )
+            dataloader = self.make_dataloader(
+                train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs
+            )
+            return dataloader  
         
         # ############################################################
         # ####### CASE 3: Make sure there is a need to re-sort #######
@@ -289,7 +326,6 @@ class BaseASR(sb.core.Brain, ABC):
             )
             dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
             return dataloader
-
         
         # ############################################################
         # ################### CASE 4: Subsampling ####################
@@ -487,6 +523,53 @@ class BaseASR(sb.core.Brain, ABC):
             loss = self._loss_curriculum_update(stage, batch, loss, predictions)
         return loss
 
+    def adaptive_pacing(self,
+        n_epochs: int,
+        epochs_per_group: int,
+        incremental: bool = True,
+        normalize: Optional[bool] = True,
+        inplace_norm: Optional[bool] = False
+    ):
+        """
+        Arguments:
+            n_epochs: For how many epochs shall these difficulties be used. If we are
+                using a metadata-based curriculum learning method then this should be
+                equal to the total number of epochs. Otherwise, it should equal the 
+                number of subsampling epochs (check `subsampling_n_epochs` in the yaml files.)
+            epochs_per_group: On how many epochs should each group be used for training?
+                E.g. if 2, then the easiest group will be used for 2 epochs, then the
+                     next group will be used for the next 2 epochs, and so on.
+            incremental: If true then each subsequent subset will also contain the easy 
+                examples taken from the previous subset. Check CurriculumDataset.split_into_k for more.
+            normalize: Whether or not the sorting dictionary should be normalized. Notice that
+                this normalization is IN-PLACE if inplace is True. The same normalization happens in
+                CurriculumDataset._curriculum_filtered_ids
+            inplace_norm: If true and `normalize` is also true then the sorting dictionary will
+                be normalized in place (previous values will be overwritten).
+        """
+        if not isinstance(self.train_set, CurriculumBase):
+            raise NotImplementedError("Cannot use adaptive pacing with metadata-based workflow.")
+        if len(self.sorting_dict) == 0:
+            raise ValueError("The length of the sorting dictionary cannot be 0 when using an adaptive pacing function.")
+        if normalize and not inplace_norm:
+            sd = self.sorting_dict.copy()
+        else:
+            sd = self.sorting_dict
+        # E.g. if 15 epochs and we train on each subset for 4 epochs, then we need
+        #      15//4=3 groups. In the first 4 epochs we will have the 1st group,
+        #      In epochs 5-8, we will have the 2nd group, in epochs 9-12 the 3rd group
+        #      and in epochs 13-15 we will keep processing the 3rd group.
+        n_difficulty_groups = n_epochs // epochs_per_group
+        train_set = self.train_set.adaptive_pacing(
+            sd, 
+            n_difficulty_groups,
+            epochs_per_group,
+            incremental,
+            normalize,
+            self.reverse
+        )
+        return train_set
+
     def subsample_trainset(
       self, 
       percentage: Optional[float] = None, 
@@ -612,7 +695,7 @@ class BaseASR(sb.core.Brain, ABC):
             train_set = self.train_subset.filtered_sorted(
                 sort_key=self.sorting,
                 sorting_dict=self.sorting_dict,
-                reverse=getattr(self.hparams, "reverse", False),
+                reverse=self.reverse,
                 noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
             )
         logger.info(f"Size of the 'subsampled' trainset: {len(train_set)} and type: {type(train_set)} \
@@ -858,27 +941,33 @@ class BaseASR(sb.core.Brain, ABC):
             return
         if self._curriculum_log_saved is True or stage != sb.Stage.TRAIN or (not self.sorting_dict_needs_save):
             return
-        print(f"{self.train_set=} \nTYPE: {type(self.train_set)=}")
         def __save__(sorting_dict_log, ordered_examples):
             with open(sorting_dict_log, 'w') as fa:
                 # fa.write("ID\tScore\n")
                 fa.write('\n'.join(ordered_examples))
             logger.info("Log file saved under: {}".format(sorting_dict_log))
             self._curriculum_log_saved = True
-        # TODO: Doesn't handle ascending+subsample save
         if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
-            # assert hasattr(self, 'sorting_dict')
             save_folder = os.path.join(self.hparams.output_folder, "curriculum_logs")
             if not os.path.isdir(save_folder):
                 os.mkdir(save_folder)
+            # assert hasattr(self, 'sorting_dict')
             sorting_dict_log = os.path.join(save_folder, f"{self.dict_log_prefix}{self.sorting}_dict-epoch={epoch}.log")
-            ordered_examples = [f"{k}\t{v}" for k, v in sorted(sorting_dict.items(), key=lambda x: x[1], reverse=True)]
         elif isinstance(self.train_set, (FilteredSortedDynamicItemDataset, FilteredSortedFrequencyCL)) \
           and self.sorting != "random":
             # Output path
             sorting_dict_log = os.path.join(self.hparams.output_folder, f"{self.dict_log_prefix}{self.sorting}_dict.log")
             if os.path.isfile(sorting_dict_log):
                 return
+        ordered_examples = self._get_ordered_examples(sorting_dict)
+        __save__(sorting_dict_log, ordered_examples)
+    
+    def _get_ordered_examples(self, sorting_dict):
+        if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
+            # assert hasattr(self, 'sorting_dict')
+            ordered_examples = [f"{k}\t{v}" for k, v in sorted(sorting_dict.items(), key=lambda x: x[1], reverse=True)]
+        elif isinstance(self.train_set, (FilteredSortedDynamicItemDataset, FilteredSortedFrequencyCL)) \
+          and self.sorting != "random":
             if self.sorting in FrequencyCL.VALID_FREQUENCY_TYPES:
                 ordered_dict = self.train_set.get_frequencies()
                 ordered_examples = [f"{key}\t{value}" for key, value in sorted(ordered_dict.items(), key=lambda x: x[1], reverse=True)]
@@ -905,7 +994,7 @@ class BaseASR(sb.core.Brain, ABC):
         else:
             raise NotImplementedError(f"Could not save sorting dict for method {self.sorting}\
                 when the type of the train set is {type(self.train_set)}.")
-        __save__(sorting_dict_log, ordered_examples)
+        return ordered_examples
 
     def _update_dict(self, batch_id, value, dur, sorting_method=None):
         if not isinstance(value, tuple):
@@ -992,7 +1081,7 @@ class BaseASR(sb.core.Brain, ABC):
         p_seq = predictions["seq_logprobs"]
 
         reduction = "mean" if reduction == "batch" else reduction
-        postproc = lambda stage, batch, loss, predictions: loss
+        postproc = lambda stage, batch, loss, predictions, sorting_dict: loss
         if stage != sb.Stage.TRAIN:
             pass
         elif self.use_fixed_sorting is True:
@@ -1013,7 +1102,7 @@ class BaseASR(sb.core.Brain, ABC):
             label_smoothing=self.hparams.label_smoothing,
             reduction=reduction
         )
-        loss_seq = postproc(stage, batch, loss_seq, predictions)
+        loss_seq = postproc(stage, batch, loss_seq, predictions, sorting_method)
         return loss_seq
     
     def _compute_ctc_loss(self, predictions, batch, stage=None, reduction="mean", sorting_method=None):
