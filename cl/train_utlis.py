@@ -160,18 +160,24 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
             try_recover=False,
         )
         del train_dataset, pm_tokenizer, pretrained_hparams, asr_temp
-        asr_brain.train_set = asr_brain.train_set.filtered_sorted(
-            sort_key=hparams['sorting'], 
-            sorting_dict=sorting_dict,
-            reverse=hparams.get("reverse", False),
-        )
+        if not asr_brain.do_adaptive_pacing:
+            asr_brain.train_set = asr_brain.train_set.filtered_sorted(
+                sort_key=hparams['sorting'], 
+                sorting_dict=sorting_dict,
+                reverse=hparams.get("reverse", False),
+            )
+        else:
+            # otherwise the train set should stay as it is (a curriculum base)
+            pass
         asr_brain.sorting_dict = sorting_dict
         asr_brain.final_sortings = sorting_dict.copy()
     else:
         asr_brain.sorting_dict = {}
     
     if hparams.get("use_fixed_sorting", False) and "pretrained_model_hparams" in hparams:
+        logger.info("Transfer learning CL approach...")
         if asr_brain.sorting_dict is None or len(asr_brain.sorting_dict) == 0:
+            logger.info("Loading the precomputed sorting dictionary for CL.")
             asr_brain.sorting_dict = asr_brain.load_sorting_dict(epoch=0)
         train_set = asr_brain.make_dataloader(
             dataset=asr_brain.train_set,

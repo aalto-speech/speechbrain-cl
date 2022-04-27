@@ -71,6 +71,7 @@ class CurriculumBase(DynamicItemDataset):
         noise_percentage: Optional[float] = None,
         normalize: Optional[bool] = True,
         reverse: Optional[bool] = False,
+        current_epoch: Optional[int] = 0,
     ):
         """
         Arguments:
@@ -105,7 +106,9 @@ class CurriculumBase(DynamicItemDataset):
         # If the second element is greater than epochs_per_group then we move on to the
         # next group.
         if not hasattr(self, "adaptive_pacing_index"):
-            self.adaptive_pacing_index = np.array((0, 0))
+            paced_ids_index = current_epoch // epochs_per_group
+            n_usage_epochs = current_epoch % epochs_per_group - 1
+            self.adaptive_pacing_index = np.array((paced_ids_index, n_usage_epochs))
         elif self.adaptive_pacing_index[0] >= len(paced_sorted_ids)-1:
             logger.warning(strip_spaces(f"The adaptive pacing index has reached the maximum number \
                 of groups ({self.adaptive_pacing_index}). We will keep increasing the \

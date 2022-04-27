@@ -133,7 +133,7 @@ class BaseASR(sb.core.Brain, ABC):
     
     @property
     def epochs_per_adaptive_group(self):
-        return getattr(self.hparams, "epochs_per_adaptive_group", 2)
+        return getattr(self.hparams, "epochs_per_adaptive_group", 2) or 2
     
     @property
     def incremental_adaptive_pacing(self):
@@ -141,7 +141,7 @@ class BaseASR(sb.core.Brain, ABC):
     
     @property
     def curriculum_update_every(self):
-        return getattr(self.hparams, 'curriculum_update_every', None) or 1
+        return getattr(self.hparams, 'curriculum_update_every', 1) or 1
     
     @property
     def current_epoch(self):
@@ -294,10 +294,10 @@ class BaseASR(sb.core.Brain, ABC):
         # ############################################################
         # ############ CASE 3: Adaptive Pacing Function ##############
         # ############################################################
-        if self.do_adaptive_pacing and len(self.sorting_dict) < len(self.train_set):
+        if self.do_adaptive_pacing and len(self.sorting_dict) < len(self.current_trainset):
             logger.warning(f"Using an adaptive pacing function is not possible\
-                with an empty or non-full sorting dictionary ({self.sorting_dict=}).")
-        if self.do_adaptive_pacing and len(self.sorting_dict) > 0:
+                with an empty or non-full sorting dictionary ({len(self.sorting_dict)=}...{len(self.current_trainset)=}).")
+        if self.do_adaptive_pacing and len(self.sorting_dict) == len(self.current_trainset):
             logger.info(f"Using and adaptive pacing function on a sorting dictionary of length: {len(self.sorting_dict)}.")
             train_set = self.adaptive_pacing(
                 n_epochs=self.hparams.number_of_epochs,
@@ -472,6 +472,7 @@ class BaseASR(sb.core.Brain, ABC):
           and not getattr(self.train_set, 'sorting', [''])[0] in self.train_set.CURRICULUM_KEYS:
             logger.warn("Tuple sorting method is not yet implemented.")
             raise NotImplementedError("JointCurriculum has not been implemented.")
+        raise Exception("UnexpectedException: You shouldn't be here.")
 
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of an epoch."""
@@ -548,7 +549,7 @@ class BaseASR(sb.core.Brain, ABC):
                 be normalized in place (previous values will be overwritten).
         """
         if not isinstance(self.train_set, CurriculumBase):
-            raise NotImplementedError("Cannot use adaptive pacing with metadata-based workflow.")
+            raise NotImplementedError(f"Cannot use adaptive pacing with metadata-based workflow. {type(self.train_set)=}")
         if len(self.sorting_dict) == 0:
             raise ValueError("The length of the sorting dictionary cannot be 0 when using an adaptive pacing function.")
         if normalize and not inplace_norm:
@@ -566,7 +567,8 @@ class BaseASR(sb.core.Brain, ABC):
             epochs_per_group,
             incremental,
             normalize,
-            self.reverse
+            self.reverse,
+            current_epoch=self.current_epoch,
         )
         return train_set
 
@@ -1073,7 +1075,14 @@ class BaseASR(sb.core.Brain, ABC):
         # NOTE: You will probably have to override this method.
         # logger.debug("Using the default implementation for seq_loss computation (`base_asr_model.py`).")
 
-        sorting_method = sorting_method or self.sorting
+        # sorting_method = sorting_method or self.sorting
+        if (sorting_method is None and \
+            len(self.sorting_dict) < len(self.current_trainset)) or \
+                not self.do_adaptive_pacing or \
+                    stage != sb.Stage.TRAIN:
+            sorting_method = self.sorting
+        if not self.do_adaptive_pacing:
+            assert sorting_method is not None, f"{sorting_method=}...{self.sorting=}...{len(self.sorting_dict)=}...{len(self.current_trainset)=}...{stage=}"
         # Computing seq2seq loss
         tokens_eos, tokens_eos_lens = self.prepare_tokens(
             stage, batch.tokens_eos
@@ -1085,6 +1094,18 @@ class BaseASR(sb.core.Brain, ABC):
         if stage != sb.Stage.TRAIN:
             pass
         elif self.use_fixed_sorting is True:
+            pass
+        elif (self.current_epoch % self.curriculum_update_every != 0) and (not self.use_default_training):
+            # NOTE (IMPORTANT): If do_adaptive is true then when we pass the 
+            # first self.curriculum_update_every epochs, we will end up updating
+            # only certain entries of the sorting dictionary. I.e. At first the 
+            # dictionary will have 100% of the data, then after the 1st epoch
+            # the train set will be only e.g. 10% of the whole train set (due 
+            # to the adaptive pacing), ..., at the curriculum_update_every-th
+            # epochs the train set will still be a subset of the whole train set.
+            # This means that after curriculum_update_every the sorting dict will
+            # only update certain entries of it (the ones that are in the current
+            # train set). And so a micxture of the old and new sortings will be mixed.
             pass
         elif sorting_method == "seq_loss":
             reduction = "batch"
@@ -1110,7 +1131,14 @@ class BaseASR(sb.core.Brain, ABC):
         # logger.debug("Using the default implementation for ctc_loss computation (`base_asr_model.py`).")
         # Computing ctc loss
         assert hasattr(self, 'feat_lens')
-        sorting_method = sorting_method or self.sorting
+        if (sorting_method is None and \
+            len(self.sorting_dict) < len(self.current_trainset)) or \
+                not self.do_adaptive_pacing or \
+                    stage != sb.Stage.TRAIN:
+            sorting_method = self.sorting
+        if not self.do_adaptive_pacing:
+            assert sorting_method is not None, f"{sorting_method=}...{self.sorting=}...{len(self.sorting_dict)=}...{len(self.current_trainset)=}...{stage=}"
+        # sorting_method = sorting_method or self.sorting
         # tokens, tokens_lens = batch.tokens
         tokens, tokens_lens = self.prepare_tokens(stage, batch.tokens)
         if len(predictions) == 1:
