@@ -271,15 +271,16 @@ def _process_text(text: str, remove_special_tokens: bool = False):
     text = re.sub("\s+", " ", text).strip()
     return text
 
-def normalize_text(line, *args, **kwargs):
-    # Remove special tokens:
-    line = line.replace("[oov]", "")
+def normalize_text(line, remove_special_tokens=True, *args, **kwargs):
     line = re.sub(SPECIAL_MARK_MATCHER, "", line)
-    line = line.replace("<UNK>", "")
-    line = line.replace("[spn]", "")
-    line = line.replace("[spk]", "")
-    line = line.replace("[int]", "")
-    line = line.replace("[fil]", "")
+    if remove_special_tokens:
+        # Remove special tokens:
+        line = line.replace("[oov]", "")
+        line = line.replace("<UNK>", "")
+        line = line.replace("[spn]", "")
+        line = line.replace("[spk]", "")
+        line = line.replace("[int]", "")
+        line = line.replace("[fil]", "")
     # Canonical forms of letters, see e.g. the Python docs
     # https://docs.python.org/3.7/library/unicodedata.html#unicodedata.normalize
     line = unicodedata.normalize("NFKC", line)

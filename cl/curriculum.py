@@ -36,7 +36,7 @@ class CurriculumBase(DynamicItemDataset):
       reverse: Optional[bool] = False, 
       sorting_dict: Optional[dict] = None,
       incremental: Optional[bool] = False,
-    ):
+    ) -> List[np.ndarray]:
         """
         Arguments:
             k: Number of difficulty groups. E.g. if `reverse` is False then the first
@@ -90,6 +90,7 @@ class CurriculumBase(DynamicItemDataset):
                 CurriculumDataset._curriculum_filtered_ids
             reverse: Descending sorting?
         """
+        logger.info(f"Number of difficulty groups (k): {n_difficulty_groups=}, {epochs_per_group=}")
         if not isinstance(sorting_dict, dict) or len(sorting_dict) == 0:
             raise ValueError(f"Invalid sorting dictionary of type: {type(sorting_dict)}.")
         if normalize:
@@ -100,13 +101,19 @@ class CurriculumBase(DynamicItemDataset):
             sorting_dict=sorting_dict,
             incremental=incremental
         )
+        tmp_path = "/m/teamwork/t40511_asr/p/curriculum-e2e/startover/test_recipes/lahjoita_puhetta/ASR/seq2seq/exps/tests/"
+        with open(os.path.join(tmp_path, "paced_sorted_ids.txt"), "w") as fw:
+            for i, el in enumerate(paced_sorted_ids):
+                fw.write(f"{i=}:\t {len(el)=} \t[{', '.join(el[:10])}]\n\n\n\n\n")
+        logger.info(f'Saved paced indices under {os.path.join(tmp_path, "paced_sorted_ids.txt")}')
         # self.adaptive_pacing_index is a tuple (in the form of a numpy array)
         # whose first element is the index of paced_sorted_ids which we will use,
         # and the second element is the number of epoch that this index has been used.
         # If the second element is greater than epochs_per_group then we move on to the
         # next group.
+        logger.info(f"Adaptive pacing index before update: {getattr(self, 'adaptive_pacing_index', None)}")
         if not hasattr(self, "adaptive_pacing_index"):
-            paced_ids_index = current_epoch // epochs_per_group
+            paced_ids_index = max(0, current_epoch // epochs_per_group - 1)
             n_usage_epochs = current_epoch % epochs_per_group - 1
             self.adaptive_pacing_index = np.array((paced_ids_index, n_usage_epochs))
         elif self.adaptive_pacing_index[0] >= len(paced_sorted_ids)-1:
@@ -126,6 +133,7 @@ class CurriculumBase(DynamicItemDataset):
         if isinstance(noise_percentage, float) and 0.0 < noise_percentage <= 1.0:
             current_indices = self.add_random_noise(current_indices, noise_percentage)
             logger.info("Added some random noise among the easy examples.")
+        logger.info(f"Adaptive pacing index is: {self.adaptive_pacing_index}")
         return FilteredSortedDynamicItemDataset(self, current_indices)
     
     @classmethod

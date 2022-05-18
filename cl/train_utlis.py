@@ -188,6 +188,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
     else:
         train_set = asr_brain.train_set
     # Training
+    # with torch.autograd.detect_anomaly():
     asr_brain.fit(
         asr_brain.hparams.epoch_counter,
         train_set,

@@ -560,16 +560,25 @@ class BaseASR(sb.core.Brain, ABC):
         #      15//4=3 groups. In the first 4 epochs we will have the 1st group,
         #      In epochs 5-8, we will have the 2nd group, in epochs 9-12 the 3rd group
         #      and in epochs 13-15 we will keep processing the 3rd group.
-        n_difficulty_groups = n_epochs // epochs_per_group
-        train_set = self.train_set.adaptive_pacing(
-            sd, 
-            n_difficulty_groups,
-            epochs_per_group,
-            incremental,
-            normalize,
-            self.reverse,
-            current_epoch=self.current_epoch,
-        )
+        n_difficulty_groups = min(1, n_epochs % epochs_per_group) + n_epochs // epochs_per_group
+        try:
+            train_set = self.train_set.adaptive_pacing(
+                sd, 
+                n_difficulty_groups,
+                epochs_per_group,
+                incremental,
+                normalize,
+                self.reverse,
+                current_epoch=self.current_epoch,
+            )
+        except Exception as e:
+            logger.info("Error occurred when applying the pacing function.")
+            logger.info(f"The length of the current sorting dictionary is: {len(sd)}.")
+            logger.info(f"Other hyperparameters: {n_difficulty_groups=} -- {epochs_per_group=} -- {incremental=} -- {normalize=} -- {self.reverse=} -- {self.current_epoch=}.")
+            if len(sd) > 0:
+                key1 = list(sd.keys())[0]
+                logger.info(f"Sample from the sorting dictionary {key1}: {sd[key1]}.")
+            raise e
         return train_set
 
     def subsample_trainset(
@@ -878,7 +887,7 @@ class BaseASR(sb.core.Brain, ABC):
                 )
 
                 # Debug mode only runs a few batches
-                if self.debug and self.step == self.debug_batches:
+                if self.debug:# and self.step == self.debug_batches:
                     break
 
                 if (
