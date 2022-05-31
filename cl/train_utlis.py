@@ -55,7 +55,7 @@ from cl.asr_models import ASR, ASR_Old, AsrWav2Vec2
 from cl.curriculum import CurriculumDataset
 from cl.methods.frequency_cl import FrequencyCL
 from cl.filelist_tokenizer import FileListTokenizer
-from cl.utils import normalize_text, strip_spaces
+from cl.utils.process_utils import normalize_text, strip_spaces
 from cl.vad import testset_pipeline_with_segments, testset_pipeline_with_force_segments
 
 
@@ -174,7 +174,8 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
     else:
         asr_brain.sorting_dict = {}
     
-    if hparams.get("use_fixed_sorting", False) and "pretrained_model_hparams" in hparams:
+    if hparams.get("use_fixed_sorting", False) \
+      and hparams.get("pretrained_model_hparams", None) not in [None, False]:
         logger.info("Transfer learning CL approach...")
         if asr_brain.sorting_dict is None or len(asr_brain.sorting_dict) == 0:
             logger.info("Loading the precomputed sorting dictionary for CL.")

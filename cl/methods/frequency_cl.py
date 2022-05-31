@@ -126,7 +126,7 @@ class FrequencyCL(CurriculumDataset):
         if hasattr(self, 'reverse_freqs'):
             return self.reverse_freqs
         reverse_freqs = self.calculate_frequency()
-        return utils.normalize_dict(reverse_freqs)
+        return utils.process_utils.normalize_dict(reverse_freqs)
 
     def get_scores(self):
         reverse_freqs = self.get_frequencies()

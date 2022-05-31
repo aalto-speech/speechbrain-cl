@@ -18,7 +18,7 @@ import sentencepiece as spm
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.dataio.dataio import merge_char
 from speechbrain.utils.distributed import run_on_main
-from .utils import _process_text, filelist_to_text_gen
+from cl.utils.process_utils import _process_text, filelist_to_text_gen
 
 # torch.cuda.set_device(0)
 logger = logging.getLogger(__name__)

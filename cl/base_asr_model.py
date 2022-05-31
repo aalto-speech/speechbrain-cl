@@ -23,9 +23,9 @@ from speechbrain.utils.distributed import run_on_main
 from speechbrain.dataio.batch import PaddedBatch
 # from speechbrain.dataio.dataloader import SaveableDataLoader
 from speechbrain.dataio.dataset import DynamicItemDataset, FilteredSortedDynamicItemDataset
-from .curriculum import CurriculumBase, CurriculumDataset, CurriculumSubset
-from .methods.frequency_cl import FilteredSortedFrequencyCL, FrequencyCL
-from .utils import (
+from cl.curriculum import CurriculumBase, CurriculumDataset, CurriculumSubset
+from cl.methods.frequency_cl import FilteredSortedFrequencyCL, FrequencyCL
+from cl.utils.process_utils import (
     checkpoint_wrapper_cl, strip_spaces, 
     load_sorting_dictionary, save_sorting_dictionary
 )
@@ -156,6 +156,10 @@ class BaseASR(sb.core.Brain, ABC):
         if self.do_subsample and hasattr(self, 'train_subset'):
             return self.train_subset
         return self.train_set
+    
+    @property
+    def use_transfer_cl(self):
+        return self.use_fixed_sorting or (getattr(self.hparams, 'pretrained_model_hparams', None) is not None)
 
     @property
     def use_default_training(self):
@@ -695,13 +699,15 @@ class BaseASR(sb.core.Brain, ABC):
                         self.sorting_dict = {k: v for k, v in self.sorting_dict.items() if k in self.train_subset.data_ids}
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \
-                {len(shuffled_train_ids)} datapoints (out of {len(self.train_set)})."))
+                {len(self.train_subset)} datapoints (out of {len(self.train_set)})."))
         if (self.sorting in BaseASR.DURATION_CL_KEYS) or self.use_default_training:
             logger.info("Duration-based sorting + subsampling. This implies that the `noisy` CL method cannot be used.")
             train_set = self.train_subset.filtered_sorted(
                 sort_key="duration",
                 reverse=True if self.sorting == "descending" else False,
             )
+        elif self.use_transfer_cl and isinstance(self.train_subset, FilteredSortedDynamicItemDataset):
+            train_set = self.train_subset
         else:
             train_set = self.train_subset.filtered_sorted(
                 sort_key=self.sorting,

@@ -9,6 +9,9 @@ from .info.find_anomalies import _parse_args as test_anomalies, _get_parser as t
 from .info.plot_metric_per_length import _get_parser as parse_test_wrt_durations, _parse_args as plot_test_per_length
 # from .info.log_corr import _get_parser as _get_corr_parser, _parse_args as _parse_corr_args
 from .info.testset_correlation import _get_parser as _get_test_corr_parser, _parse_args as _parse_corr_args
+from .utils.sb_wer_to_kaldi import _get_parser as sb_wer_parser, _parse_args as sb_wer_to_kaldi
+from .utils.kaldi_format_calc_wer import _get_parser as kaldi_calc_wer_parser, _parse_args as kaldi_calc_wer
+from .utils.remove_repetitions import _get_parser as remove_reps_parser, _parse_args as remove_reps
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -56,6 +59,9 @@ def dispatch():
         "testwer", aliases=["tw"], help = "Print wer scores on the test set with the ability to make a barplot."
     )
     testwer_parser = test_wer_parser(testwer_parser)
+    testwer_parser = remove_reps_parser(testwer_parser)
+    testwer_parser = sb_wer_parser(testwer_parser)
+    testwer_parser = kaldi_calc_wer_parser(testwer_parser)
     testwer_parser = test_anomalies_parser(testwer_parser)
     testwer_parser.add_argument(
         "--find-anomalies", "-fa", action="store_true", default=False,
@@ -63,9 +69,30 @@ def dispatch():
             the provided wer_test*.txt or cer_test*.txt files and compare them\
             if the --compare option is also provided."
     )
+    testwer_parser.add_argument(
+        "--remove-repetitions", "-rr", action="store_true", default=False,
+        help="Remove repetitions from .kaldi files."
+    )
+    testwer_parser.add_argument(
+        "--to-kaldi-text", "-kt", action="store_true", default=False,
+        help="If provided then the input {wer,cer}_test*.txt files\
+            will be converted to kaldi format (utt_id word1 word2 ...)."
+    )
+    testwer_parser.add_argument(
+        "--noreps-to-wer-txt", "-nr", action="store_true", default=False,
+        help="If provided then a {wer,cer}_test_noreps.txt file\
+            will be created based on the input _noreps.kaldi files.\
+            This will contain the typical wer_test.txt stats of speechbrain"
+    )
     def testwer_func(args):
+        if args.remove_repetitions:
+            return remove_reps(args)
         if args.find_anomalies:
             return test_anomalies(args)
+        if args.to_kaldi_text:
+            return sb_wer_to_kaldi(args)
+        if args.noreps_to_wer_txt:
+            return kaldi_calc_wer(args)
         prefix = "cer" if args.cer else "wer"
         if args.wer_suffix is None:
             if args.vad:

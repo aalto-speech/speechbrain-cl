@@ -2,6 +2,8 @@ import argparse
 import os
 import re
 from typing import Optional
+import random
+import warnings
 
 
 FIRST_EXAMPLE_LINE = 12
@@ -21,8 +23,13 @@ def read_single(path, threshold=DEFAULT_METRIC_THRESHOLD, print_stats=True):
         lines = [e[:-2] for e in map(separate_func, lines) if e[1] >= threshold]
         if print_stats:
             print("="*60)
-            print(f"Number of utts with more than {DEFAULT_METRIC_THRESHOLD} {'WER' if is_wer else 'CER'}: {len(lines)}.")
+            print(f"Number of utts with more than {threshold} {'WER' if is_wer else 'CER'}: {len(lines)}.")
             print(f"Insertions: {sum(e[2] for e in lines)}  |  Deletions: {sum(e[3] for e in lines)}  |  Substitutions: {sum(e[4] for e in lines)}")
+            try:
+                random_insertions = random.sample([e[-1] for e in lines if e[2] > 4], 2)
+                print("Some random utterances with more than 4 insertions:\n  "+'\n  '.join(random_insertions))
+            except ValueError as e:
+                warnings.warn(str(e))
     return lines
         
 def compare(cer_path: str, wer_path: str, threshold: float = DEFAULT_METRIC_THRESHOLD, out_path: Optional[str] = None):

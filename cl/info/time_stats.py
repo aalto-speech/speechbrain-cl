@@ -3,7 +3,7 @@ from typing import Optional
 from tqdm import tqdm
 import numpy as np
 from cl.curriculum import CurriculumDataset
-from cl.utils import calculate_dataset_hours
+from cl.utils.process_utils import calculate_dataset_hours
 
 def calculate_total_hours_seen(
         train_csv: str, 

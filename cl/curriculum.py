@@ -11,7 +11,7 @@ from typing import (
 # from collections.abc import Iterable
 import numpy as np
 from tqdm import tqdm
-from cl.utils import (
+from cl.utils.process_utils import (
     strip_spaces, normalize_dict, 
     normalize_only_durs, normalize_with_confs
 )
