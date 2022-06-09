@@ -24,11 +24,11 @@ sns.set()
 plt.rcParams.update({'font.size': 19})
 
 labels = []
-def add_label(violin, label):
+def add_label(violin, label, labs=labels):
     # adds label to violinplot:
     # https://stackoverflow.com/questions/33864578/matplotlib-making-labels-for-violin-plots
     color = violin["bodies"][0].get_facecolor().flatten()
-    labels.append((mpatches.Patch(color=color), label))
+    labs.append((mpatches.Patch(color=color), label))
 
 def capitalize(l: list):
     l = [s.capitalize() for s in l]  # capitalize all
@@ -579,11 +579,30 @@ def _testset_boxplot_single(wer_file, model_name=None, max_allowed_score=250.0, 
         wer = float(l.split(metric)[1].split("[")[0].strip())
     print(f"| {wer_file.split('seq2seq/')[1]}\t|\t{wer}\t|\t{int(sum(ins))}\t|\t{int(sum(dels))}\t|\t{int(sum(subs))}\t|")
 
-    return changes
+    return changes, wer
+
+def violinplots_by3(args):
+    n_files = len(args.wer_paths)
+    out_path_gen = args.out_path
+    if out_path_gen is not None:
+        main_name, ext = os.path.splitext(out_path_gen)
+    if n_files > 3:
+        sub_wer_files = [args.wer_paths[i-3:i] for i in range(3, n_files, 3)]
+        if n_files % 3 != 0:
+            sub_wer_files.append(args.wer_paths[-(n_files%3):])
+        for i, sub_list in enumerate(sub_wer_files):
+            out_path = None
+            if out_path_gen is not None:
+                out_path = main_name + f"_{i}" + ext
+            args.out_path = out_path
+            args.wer_paths = sub_list
+            testset_boxplot_comparison(args)
+
 
 def testset_boxplot_comparison(args):
-    print(args)
-    out_path = getattr(args, "out_path")
+    # print(args)
+    labels = []
+    out_path = getattr(args, "out_path", None)
     wer_files = args.wer_paths
     assert len(wer_files) >= 1, f"You need to provide at least one wer_test.txt file or directory ({wer_files=})."
     wer_changes = {}
@@ -618,9 +637,9 @@ def testset_boxplot_comparison(args):
         wer_changes[model_name] = _testset_boxplot_single(wer_file, model_name)
     plt.subplot(n_cols, n_rows, i + 2)
     for pos, m in enumerate(wer_changes.keys()):
-        v = plt.violinplot([wer_changes[m]], [pos])
-        add_label(v, m)
-    plt.legend(*zip(*labels), prop={'size': 6})
+        v = plt.violinplot([wer_changes[m][0]], [pos])
+        add_label(v, m + f" (WER={wer_changes[m][1]})", labels)
+    plt.legend(*zip(*labels), prop={'size': 8})
     # plt.xticks(np.linspace(1, l, num=l, dtype=np.int16), wer_changes.keys(), fontsize=15)
     plt.title("Number of changes for each model", fontsize=12)
     fig.tight_layout()

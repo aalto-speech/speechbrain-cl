@@ -1238,7 +1238,7 @@ class BaseASR(sb.core.Brain, ABC):
             # ###############################################
             # ########## For Curriculum Learning ############
             # ###############################################
-            save_dict["curriculum_step"] = self.train_set.step
+            save_dict["curriculum_step"] = getattr(self.train_set, "step", 0)
             save_dict["running_average"] = getattr(self.train_set, "running_average", 0)
             save_dict['curriculum_dict'] = self.sorting_dict
             dataset = self.train_subset if self.do_subsample and hasattr(self, 'train_subset') else self.train_set
