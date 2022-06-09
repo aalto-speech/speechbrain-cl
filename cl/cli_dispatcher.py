@@ -1,7 +1,7 @@
 #!/m/teamwork/t40511_asr/p/curriculum-e2e/startover/sssb/bin/python
 import argparse
 
-from .info.visualize import testset_boxplot_comparison, plot_logs_dispatcher
+from .info.visualize import violinplots_by3 as testset_boxplot_comparison, plot_logs_dispatcher
 from .info.statmd import get_args, statmd, _add_parser_args
 from .info.get_train_times import main as get_train_times
 from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
@@ -12,6 +12,8 @@ from .info.testset_correlation import _get_parser as _get_test_corr_parser, _par
 from .utils.sb_wer_to_kaldi import _get_parser as sb_wer_parser, _parse_args as sb_wer_to_kaldi
 from .utils.kaldi_format_calc_wer import _get_parser as kaldi_calc_wer_parser, _parse_args as kaldi_calc_wer
 from .utils.remove_repetitions import _get_parser as remove_reps_parser, _parse_args as remove_reps
+from .utils.convert_txt_to_trn import _get_parser as convert_to_trn_parser, _parse_args as convert_to_trn
+from .utils.significance_tests import _get_parser as get_sign_test_parser, _parse_args as parse_sign_test_args
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -194,6 +196,34 @@ def dispatch():
     )
     corr_parser = _get_test_corr_parser(corr_parser)
     corr_parser.set_defaults(func=_parse_corr_args)
+
+    # ============================================
+    # =========== CONVERSIONS (v7.0) =============
+    # ============================================
+    conv_parser = subparsers.add_parser(
+        "convert", aliases=["cv"], help = "Convert log files to specified formats.\
+            E.g. the -trn option converts wer_test*.txt files to .trn files.\
+            I.e. w1 w2 w3 ... w_n (utterance_id)"
+    )
+    conv_parser.add_argument("--to-trn-format", "-trn", default=False, action="store_true",
+        help="If provided, will convert the wer_test*.txt to the trn format."
+    )
+    def parse_conv_args(args):
+        # if args.to_trn_format:
+        #     return convert_to_trn(args)
+        return convert_to_trn(args)
+    conv_parser = convert_to_trn_parser(conv_parser)
+    conv_parser.set_defaults(func=parse_conv_args)
+
+    # ============================================
+    # =========== SIGNIFICANCE TESTS =============
+    # ============================================
+    sign_test_parser = subparsers.add_parser(
+        "significance-tests", aliases=["st", "sign"], help = "Get the .unigram file\
+            required to perform significance tests."
+    )
+    sign_test_parser = get_sign_test_parser(sign_test_parser)
+    sign_test_parser.set_defaults(func=parse_sign_test_args)
 
     args = parser.parse_args()
     args.func(args)
