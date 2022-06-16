@@ -118,7 +118,8 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
                     between the models are the same."))
         # Load hyperparameters
         with open(hparams["pretrained_model_hparams"]) as fin:
-            pretrained_hparams = load_hyperpyyaml(fin, overrides)
+            overrides2 = "\n".join([o for o in overrides.split("\n") if "sorting" not in o and "seed" not in o])
+            pretrained_hparams = load_hyperpyyaml(fin, overrides2)
         # Load tokenizer
         pm_tokenizer = get_tokenizer(pretrained_hparams, run_opts["device"])
         # Handle trainset pipeline (Here we are making a full copy of the trainset)
