@@ -1,7 +1,7 @@
 #!/m/teamwork/t40511_asr/p/curriculum-e2e/startover/sssb/bin/python
 import argparse
 
-from .info.visualize import testset_boxplot_comparison, plot_logs_dispatcher
+from .info.visualize import violinplots_by3 as testset_boxplot_comparison, plot_logs_dispatcher
 from .info.statmd import get_args, statmd, _add_parser_args
 from .info.get_train_times import main as get_train_times
 from .info.read_wer_test import read_wer_test, _get_parser as test_wer_parser
@@ -9,6 +9,11 @@ from .info.find_anomalies import _parse_args as test_anomalies, _get_parser as t
 from .info.plot_metric_per_length import _get_parser as parse_test_wrt_durations, _parse_args as plot_test_per_length
 # from .info.log_corr import _get_parser as _get_corr_parser, _parse_args as _parse_corr_args
 from .info.testset_correlation import _get_parser as _get_test_corr_parser, _parse_args as _parse_corr_args
+from .utils.sb_wer_to_kaldi import _get_parser as sb_wer_parser, _parse_args as sb_wer_to_kaldi
+from .utils.kaldi_format_calc_wer import _get_parser as kaldi_calc_wer_parser, _parse_args as kaldi_calc_wer
+from .utils.remove_repetitions import _get_parser as remove_reps_parser, _parse_args as remove_reps
+from .utils.convert_txt_to_trn import _get_parser as convert_to_trn_parser, _parse_args as convert_to_trn
+from .utils.significance_tests import _get_parser as get_sign_test_parser, _parse_args as parse_sign_test_args
 
 def dispatch():
     parser = argparse.ArgumentParser()
@@ -56,6 +61,9 @@ def dispatch():
         "testwer", aliases=["tw"], help = "Print wer scores on the test set with the ability to make a barplot."
     )
     testwer_parser = test_wer_parser(testwer_parser)
+    testwer_parser = remove_reps_parser(testwer_parser)
+    testwer_parser = sb_wer_parser(testwer_parser)
+    testwer_parser = kaldi_calc_wer_parser(testwer_parser)
     testwer_parser = test_anomalies_parser(testwer_parser)
     testwer_parser.add_argument(
         "--find-anomalies", "-fa", action="store_true", default=False,
@@ -63,9 +71,30 @@ def dispatch():
             the provided wer_test*.txt or cer_test*.txt files and compare them\
             if the --compare option is also provided."
     )
+    testwer_parser.add_argument(
+        "--remove-repetitions", "-rr", action="store_true", default=False,
+        help="Remove repetitions from .kaldi files."
+    )
+    testwer_parser.add_argument(
+        "--to-kaldi-text", "-kt", action="store_true", default=False,
+        help="If provided then the input {wer,cer}_test*.txt files\
+            will be converted to kaldi format (utt_id word1 word2 ...)."
+    )
+    testwer_parser.add_argument(
+        "--noreps-to-wer-txt", "-nr", action="store_true", default=False,
+        help="If provided then a {wer,cer}_test_noreps.txt file\
+            will be created based on the input _noreps.kaldi files.\
+            This will contain the typical wer_test.txt stats of speechbrain"
+    )
     def testwer_func(args):
+        if args.remove_repetitions:
+            return remove_reps(args)
         if args.find_anomalies:
             return test_anomalies(args)
+        if args.to_kaldi_text:
+            return sb_wer_to_kaldi(args)
+        if args.noreps_to_wer_txt:
+            return kaldi_calc_wer(args)
         prefix = "cer" if args.cer else "wer"
         if args.wer_suffix is None:
             if args.vad:
@@ -167,6 +196,34 @@ def dispatch():
     )
     corr_parser = _get_test_corr_parser(corr_parser)
     corr_parser.set_defaults(func=_parse_corr_args)
+
+    # ============================================
+    # =========== CONVERSIONS (v7.0) =============
+    # ============================================
+    conv_parser = subparsers.add_parser(
+        "convert", aliases=["cv"], help = "Convert log files to specified formats.\
+            E.g. the -trn option converts wer_test*.txt files to .trn files.\
+            I.e. w1 w2 w3 ... w_n (utterance_id)"
+    )
+    conv_parser.add_argument("--to-trn-format", "-trn", default=False, action="store_true",
+        help="If provided, will convert the wer_test*.txt to the trn format."
+    )
+    def parse_conv_args(args):
+        # if args.to_trn_format:
+        #     return convert_to_trn(args)
+        return convert_to_trn(args)
+    conv_parser = convert_to_trn_parser(conv_parser)
+    conv_parser.set_defaults(func=parse_conv_args)
+
+    # ============================================
+    # =========== SIGNIFICANCE TESTS =============
+    # ============================================
+    sign_test_parser = subparsers.add_parser(
+        "significance-tests", aliases=["st", "sign"], help = "Get the .unigram file\
+            required to perform significance tests."
+    )
+    sign_test_parser = get_sign_test_parser(sign_test_parser)
+    sign_test_parser.set_defaults(func=parse_sign_test_args)
 
     args = parser.parse_args()
     args.func(args)

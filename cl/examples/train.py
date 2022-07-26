@@ -62,6 +62,7 @@ if __name__ == "__main__":
     run_on_main(
         prepare_dataset,
         kwargs={
+            # Some dummy parameters of the supposedly existing `prepare_dataset` function.
             "data_folder": hparams["data_folder"],
             "save_folder": hparams["output_folder"],
             "skip_prep": hparams["skip_prep"],
@@ -77,7 +78,7 @@ if __name__ == "__main__":
 
     ASR_Model = ASR
     if hparams.get('use_wav2vec2', False) is True:
-        ASR_Model = AsrWav2Vec2
+        ASR_Model = AsrWav2Vec2  # Warning: Untested
     fit(
         hparams, run_opts, overrides, ASR_Model=ASR_Model
     )

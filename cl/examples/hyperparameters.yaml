@@ -15,6 +15,7 @@ device: cuda:0
 # =================== SHARDS AREA =====================
 # =====================================================
 use_shards: False
+# They below 2 are only needed if `use_shards` is true.
 dynamic_batch_kwargs:
     max_sample_len: 480000 # 16000*30=0.5minutes
     sampler_kwargs:

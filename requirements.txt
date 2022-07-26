@@ -1,3 +1,4 @@
+wheel
 hyperpyyaml>=0.0.1
 joblib>=0.14.1
 numpy>=1.17.0

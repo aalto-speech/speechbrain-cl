@@ -24,12 +24,28 @@ python -m pip install dist/cl-1.0a0-py2.py3-none-any.whl
 - **Option 2:** Editable mode (you can perform changes to the source code):
 ```bash
 # Install package in editable mode
+# You first need to install `wheel` to avoid bdist_wheel errors.
+python -m pip install wheel
 python -m pip install -e .
 ```
 
 ## Example Usage
 
-Let's say you have your own repository named `myasr` and want to test this package. A simple way to do it would be to clone this repo inside your repository and then install it. An alternative would be to add this project as a submodule to your git repo which will make it easier for you to pull changes. Example (assuming you are in an already existing python venv):
+The installed package is called `cl` and it can be used both as library and a CLI tool. The CLI is primarily intended for analyzing results of already trained models and may be buggy. Of course, they could still be useful and that's why the CLI options are documented. To check them, run `cl --help`.
+
+As a library, `cl` offers two main interfaces:
+    - `cl.train_utils.fit`: Use this to fit a model based on some hyperparameters.
+    - `cl.asr_models.ASR`: The default ASR model implementation. Assumes a CRDNN encoder and an RNN with attention as the decoder. If you want to use a different architecture then it is advised to base you code on this class.
+
+Check `examples/train.py` for an example of how to utilize them.
+
+The CL strategies are defined in the `cl.curriculum` file, while the `cl.base_asr_model.BaseASR` is the base class that handles updating the data loader (each time the CL strategy updates the ordering) and logging the necessary information.
+
+### Command Line Interface
+
+### More Advanced Usage
+
+Let's say you have your own repository named `myasr` and want to test this package while also having the ability to tweak it. A simple way to do it would be to clone this repo inside your repository and then install it. An alternative would be to add this project as a submodule to your git repo which will make it easier for you to pull changes. Example (assuming you are in an already existing python venv):
 
 ```bash
 # Add a submodule with the name `cl`

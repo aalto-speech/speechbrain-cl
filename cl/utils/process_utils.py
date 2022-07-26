@@ -10,7 +10,6 @@ import torch
 import subprocess
 from tqdm import tqdm
 
-from cl import curriculum
 import speechbrain as sb
 from speechbrain.dataio.dataloader import SaveableDataLoader
 import unicodedata
@@ -50,7 +49,7 @@ def checkpoint_wrapper_cl(func):
         else:
             train_len = len(brain.train_set)
         if (
-            brain.sorting in curriculum.CurriculumDataset.CURRICULUM_KEYS and \
+            brain.sorting in brain.CURRICULUM_KEYS and \
             len(brain.sorting_dict) < train_len
            ) or (
             brain.sorting == "random" and brain._loaded_checkpoint is False
@@ -76,60 +75,6 @@ def calculate_dataset_hours(dataset: DynamicItemDataset, ids: Optional[List[str]
         else:
             total_duration = sum(item['duration'] for item in dataset_durs)
     return (total_duration/60)/60
-
-def calculate_total_hours_seen(
-        train_csv: str, 
-        n_epochs: int, 
-        is_paced: bool = False,
-        subsampling_n_epochs: Optional[int] = None,
-        is_fixed: bool = False,
-    ):
-    assert os.path.isfile(train_csv), train_csv
-    assert isinstance(n_epochs, int) and n_epochs > 0, "n_epochs must be a positive integer."
-    total_hours_seen = 0.
-    dataset = curriculum.CurriculumDataset.from_csv(train_csv)
-    if is_paced:
-        assert isinstance(subsampling_n_epochs, int), "subsampling_n_epochs should define \
-            every how many epochs the pacing function is applied"
-        curr_logs_path = os.path.join(os.path.dirname(train_csv), 'curriculum_logs')
-        assert os.path.isdir(curr_logs_path), curr_logs_path
-        shuffled_ids_paths = glob.glob(os.path.join(curr_logs_path, "*.npy"))
-        epochs_seen = 1
-        for i, f in tqdm(enumerate(shuffled_ids_paths)):
-            relevant_ids = np.load(f)
-            # print(f"{type(dataset)=}\n{type(dataset.data)=}\n{relevant_ids.shape}")
-            data = [dataset.data[data_id]['duration'] for idx, data_id in enumerate(dataset.data.keys()) if idx in relevant_ids]
-            hours = (sum(data)/60)/60
-            # The pacing function is applied every subsampling_n_epochs epochs
-            # so we need to take that into account.
-            if i == 0:
-                hours *= (subsampling_n_epochs-1)
-                epochs_seen += subsampling_n_epochs-1
-            elif i == len(shuffled_ids_paths)-1:
-                # At the last epoch we get the remaining hours
-                hours *= max(1, n_epochs-epochs_seen)
-                pass
-            else:
-                epochs_seen += min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
-                hours *= min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
-            total_hours_seen += hours
-        print("Saw {} epochs that saw {} hours of data.".format(epochs_seen, total_hours_seen))
-        # curr_log_files = glob.glob(os.path.join(curr_logs_path, "*.log"))
-        # for i, f in enumerate(curr_log_files):
-        #     if f.endswith("=0.log"):
-        #         is_fixed = True
-        #         continue
-        #     if i >= 2 and is_fixed:
-        #         raise ValueError("With fixed sortings, there shouldn't be more than 2 curriculum log dictionaries.")
-        #     relevant_ids = list(load_sorting_dictionary(f).keys())
-        #     hours = calculate_dataset_hours(dataset, relevant_ids)
-        #     # The pacing function is applied every subsampling_n_epochs epochs
-        #     # so we need to take that into account.
-        #     hours *= min(subsampling_n_epochs, max(1, n_epochs-((i+1)*subsampling_n_epochs)))
-        #     total_hours_seen += hours
-    else:
-        total_hours_seen = calculate_dataset_hours(dataset) * n_epochs
-    return total_hours_seen
 
 def load_sorting_dictionary(path):
     if not os.path.isfile(path):
@@ -326,15 +271,16 @@ def _process_text(text: str, remove_special_tokens: bool = False):
     text = re.sub("\s+", " ", text).strip()
     return text
 
-def normalize_text(line, *args, **kwargs):
-    # Remove special tokens:
-    line = line.replace("[oov]", "")
+def normalize_text(line, remove_special_tokens=True, *args, **kwargs):
     line = re.sub(SPECIAL_MARK_MATCHER, "", line)
-    line = line.replace("<UNK>", "")
-    line = line.replace("[spn]", "")
-    line = line.replace("[spk]", "")
-    line = line.replace("[int]", "")
-    line = line.replace("[fil]", "")
+    if remove_special_tokens:
+        # Remove special tokens:
+        line = line.replace("[oov]", "")
+        line = line.replace("<UNK>", "")
+        line = line.replace("[spn]", "")
+        line = line.replace("[spk]", "")
+        line = line.replace("[int]", "")
+        line = line.replace("[fil]", "")
     # Canonical forms of letters, see e.g. the Python docs
     # https://docs.python.org/3.7/library/unicodedata.html#unicodedata.normalize
     line = unicodedata.normalize("NFKC", line)

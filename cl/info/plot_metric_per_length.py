@@ -39,7 +39,7 @@ def utterance_map(res_path, csv_path):
     # utt2stats = {utt_id: (SCORE, DURATION, TEXT)}
     return utt2stats
 
-def plot_score_to_dur(utt2stats, title=None, out="tmp.png"):
+def plot_score_to_dur(utt2stats, title=None, out="tmp.eps"):
     # Sort utterances based on their duration
     utt2stats = {utt_id: v for utt_id, v in sorted(utt2stats.items(), key=lambda v: v[1][1])}
     # x-axis contains the durations
@@ -64,7 +64,7 @@ def plot_score_to_dur(utt2stats, title=None, out="tmp.png"):
     plt.scatter(x_axis, y_axis)
     plt.xlabel("Utterance Length (#words)")
     plt.ylabel("Score")
-    plt.savefig(out)
+    plt.savefig(out, format="eps")
 
 def plot_per_dataset(utt2stats):
     lingsoft = {utt: v for utt, v in utt2stats.items() if "lingsoft" in utt}
@@ -108,7 +108,7 @@ def _parse_args(args=None):
     
     utt2stats = utterance_map(res_path=test_metric, csv_path=test_csv)
     plot_score_to_dur(utt2stats)
-    plot_per_dataset(utt2stats)
+    # plot_per_dataset(utt2stats)
 
 if __name__ == "__main__":
     _parse_args()

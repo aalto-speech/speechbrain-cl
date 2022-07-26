@@ -23,9 +23,9 @@ from speechbrain.utils.distributed import run_on_main
 from speechbrain.dataio.batch import PaddedBatch
 # from speechbrain.dataio.dataloader import SaveableDataLoader
 from speechbrain.dataio.dataset import DynamicItemDataset, FilteredSortedDynamicItemDataset
-from .curriculum import CurriculumDataset, CurriculumSubset
-from .methods.frequency_cl import FrequencyCL
-from .utils import (
+from cl.curriculum import CurriculumBase, CurriculumDataset, CurriculumSubset
+from cl.methods.frequency_cl import FilteredSortedFrequencyCL, FrequencyCL
+from cl.utils.process_utils import (
     checkpoint_wrapper_cl, strip_spaces, 
     load_sorting_dictionary, save_sorting_dictionary
 )
@@ -50,6 +50,7 @@ class BaseASR(sb.core.Brain, ABC):
     DURATION_CL_KEYS = ['ascending', 'descending']
     VALID_CL_KEYS = ['ascending', 'descending', 'random']  + \
         CurriculumDataset.CURRICULUM_KEYS + FrequencyCL.VALID_FREQUENCY_TYPES
+    CURRICULUM_KEYS = CurriculumDataset.CURRICULUM_KEYS
 
     def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
                  checkpointer=None, sorting=None, train_set=None, train_loader_kwargs=None,
@@ -121,10 +122,26 @@ class BaseASR(sb.core.Brain, ABC):
     @property
     def do_subsample(self):
         return getattr(self.hparams, 'do_subsample', False)
+
+    @property
+    def do_adaptive_pacing(self):
+        return getattr(self.hparams, 'do_adaptive_pacing', False)
+    
+    @property
+    def reverse(self):
+        return getattr(self.hparams, "reverse", False)
+    
+    @property
+    def epochs_per_adaptive_group(self):
+        return getattr(self.hparams, "epochs_per_adaptive_group", 2) or 2
+    
+    @property
+    def incremental_adaptive_pacing(self):
+        return getattr(self.hparams, "incremental_adaptive_pacing", True)
     
     @property
     def curriculum_update_every(self):
-        return getattr(self.hparams, 'curriculum_update_every', None) or 1
+        return getattr(self.hparams, 'curriculum_update_every', 1) or 1
     
     @property
     def current_epoch(self):
@@ -139,11 +156,15 @@ class BaseASR(sb.core.Brain, ABC):
         if self.do_subsample and hasattr(self, 'train_subset'):
             return self.train_subset
         return self.train_set
+    
+    @property
+    def use_transfer_cl(self):
+        return self.use_fixed_sorting or (getattr(self.hparams, 'pretrained_model_hparams', None) is not None)
 
     @property
     def use_default_training(self):
         return (self.current_epoch <= getattr(self.hparams, 'default_sorting_epochs', 1)) and \
-            (self.sorting in getattr(self.train_set, 'CURRICULUM_KEYS', []))
+            (self.sorting in CurriculumDataset.CURRICULUM_KEYS)
     
     # Abstract methods MUST be implemented by the user.
     @abstractmethod
@@ -272,7 +293,27 @@ class BaseASR(sb.core.Brain, ABC):
             ):
                 self.train_set = self.make_random_dataloader()
             # logger.info(f"On stage start: After random. Type of train_set: {type(self.train_set)}.")
-            return self.train_set        
+            return self.train_set      
+        
+        # ############################################################
+        # ############ CASE 3: Adaptive Pacing Function ##############
+        # ############################################################
+        if self.do_adaptive_pacing and len(self.sorting_dict) < len(self.current_trainset):
+            logger.warning(f"Using an adaptive pacing function is not possible\
+                with an empty or non-full sorting dictionary ({len(self.sorting_dict)=}...{len(self.current_trainset)=}).")
+        if self.do_adaptive_pacing and len(self.sorting_dict) == len(self.current_trainset):
+            logger.info(f"Using and adaptive pacing function on a sorting dictionary of length: {len(self.sorting_dict)}.")
+            train_set = self.adaptive_pacing(
+                n_epochs=self.hparams.number_of_epochs,
+                epochs_per_group=self.epochs_per_adaptive_group,
+                incremental=self.incremental_adaptive_pacing,
+                normalize=False,
+                inplace_norm=False
+            )
+            dataloader = self.make_dataloader(
+                train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs
+            )
+            return dataloader  
         
         # ############################################################
         # ####### CASE 3: Make sure there is a need to re-sort #######
@@ -289,7 +330,6 @@ class BaseASR(sb.core.Brain, ABC):
             )
             dataloader = self.make_dataloader(train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs)
             return dataloader
-
         
         # ############################################################
         # ################### CASE 4: Subsampling ####################
@@ -385,11 +425,13 @@ class BaseASR(sb.core.Brain, ABC):
             # logger.info(f"On stage start: After load and sort. Type of train_set: {type(self.train_set)}.")
             return dataloader
         
-        # logger.info(f"On stage start: Before any method. Type of train_set: {type(self.train_set)}.")
         # ############################################################
-        # ########## CASE 6: Default Duration-Base Sorters ###########
+        # ######## CASE 6: Metadata-based Scoring Functions ##########
         # ############################################################
         if self.sorting not in CurriculumDataset.CURRICULUM_KEYS:
+            # it will only be saved on the first epoch
+            self._save_curriculum_log(stage, epoch, self.sorting_dict)
+            # The train data loader contains the already sorted data set
             return
         # ############################################################
         # ####### CASE 7: Default Ascending Sorting (for CL) #########
@@ -434,6 +476,7 @@ class BaseASR(sb.core.Brain, ABC):
           and not getattr(self.train_set, 'sorting', [''])[0] in self.train_set.CURRICULUM_KEYS:
             logger.warn("Tuple sorting method is not yet implemented.")
             raise NotImplementedError("JointCurriculum has not been implemented.")
+        raise Exception("UnexpectedException: You shouldn't be here.")
 
     def on_stage_end(self, stage, stage_loss, epoch):
         """Gets called at the end of an epoch."""
@@ -484,6 +527,63 @@ class BaseASR(sb.core.Brain, ABC):
             # assert len(loss) == len(batch.id), "While loss was: {} (loss_seq={}, batch_id={}).".format(loss, loss, batch.id)
             loss = self._loss_curriculum_update(stage, batch, loss, predictions)
         return loss
+
+    def adaptive_pacing(self,
+        n_epochs: int,
+        epochs_per_group: int,
+        incremental: bool = True,
+        normalize: Optional[bool] = True,
+        inplace_norm: Optional[bool] = False
+    ):
+        """
+        Arguments:
+            n_epochs: For how many epochs shall these difficulties be used. If we are
+                using a metadata-based curriculum learning method then this should be
+                equal to the total number of epochs. Otherwise, it should equal the 
+                number of subsampling epochs (check `subsampling_n_epochs` in the yaml files.)
+            epochs_per_group: On how many epochs should each group be used for training?
+                E.g. if 2, then the easiest group will be used for 2 epochs, then the
+                     next group will be used for the next 2 epochs, and so on.
+            incremental: If true then each subsequent subset will also contain the easy 
+                examples taken from the previous subset. Check CurriculumDataset.split_into_k for more.
+            normalize: Whether or not the sorting dictionary should be normalized. Notice that
+                this normalization is IN-PLACE if inplace is True. The same normalization happens in
+                CurriculumDataset._curriculum_filtered_ids
+            inplace_norm: If true and `normalize` is also true then the sorting dictionary will
+                be normalized in place (previous values will be overwritten).
+        """
+        if not isinstance(self.train_set, CurriculumBase):
+            raise NotImplementedError(f"Cannot use adaptive pacing with metadata-based workflow. {type(self.train_set)=}")
+        if len(self.sorting_dict) == 0:
+            raise ValueError("The length of the sorting dictionary cannot be 0 when using an adaptive pacing function.")
+        if normalize and not inplace_norm:
+            sd = self.sorting_dict.copy()
+        else:
+            sd = self.sorting_dict
+        # E.g. if 15 epochs and we train on each subset for 4 epochs, then we need
+        #      15//4=3 groups. In the first 4 epochs we will have the 1st group,
+        #      In epochs 5-8, we will have the 2nd group, in epochs 9-12 the 3rd group
+        #      and in epochs 13-15 we will keep processing the 3rd group.
+        n_difficulty_groups = min(1, n_epochs % epochs_per_group) + n_epochs // epochs_per_group
+        try:
+            train_set = self.train_set.adaptive_pacing(
+                sd, 
+                n_difficulty_groups,
+                epochs_per_group,
+                incremental,
+                normalize,
+                self.reverse,
+                current_epoch=self.current_epoch,
+            )
+        except Exception as e:
+            logger.info("Error occurred when applying the pacing function.")
+            logger.info(f"The length of the current sorting dictionary is: {len(sd)}.")
+            logger.info(f"Other hyperparameters: {n_difficulty_groups=} -- {epochs_per_group=} -- {incremental=} -- {normalize=} -- {self.reverse=} -- {self.current_epoch=}.")
+            if len(sd) > 0:
+                key1 = list(sd.keys())[0]
+                logger.info(f"Sample from the sorting dictionary {key1}: {sd[key1]}.")
+            raise e
+        return train_set
 
     def subsample_trainset(
       self, 
@@ -536,11 +636,14 @@ class BaseASR(sb.core.Brain, ABC):
                 )
             else:
                 train_set = self.train_set
-            if isinstance(train_set, FilteredSortedDynamicItemDataset):
+            if isinstance(train_set, FilteredSortedDynamicItemDataset) or isinstance(train_set, FilteredSortedFrequencyCL):
+                DatasetClass, kwargs = FilteredSortedDynamicItemDataset, {}
+                if isinstance(train_set, FilteredSortedFrequencyCL):
+                    DatasetClass, kwargs = FilteredSortedFrequencyCL, train_set.kwargs
                 logger.info(f"Using curriculum subset for filteredsorted dataset. {self.use_default_training=}")
                 # train_subset = CurriculumSubset(self.train_set, shuffled_train_ids)
                 shuffled_train_ids = [train_set.data_ids[i] for i in shuffled_train_ids]
-                train_subset = FilteredSortedDynamicItemDataset(train_set, shuffled_train_ids)
+                train_subset = DatasetClass(train_set, shuffled_train_ids, **kwargs)
             elif isinstance(train_set, DataLoader):
                 # For random sorting
                 raise NotImplementedError(f"Cannot subsample a dataloader train set of type {type(self.train_set)} ({self.sorting=}).")
@@ -596,18 +699,20 @@ class BaseASR(sb.core.Brain, ABC):
                         self.sorting_dict = {k: v for k, v in self.sorting_dict.items() if k in self.train_subset.data_ids}
             np.save(subset_ids_path, shuffled_train_ids)
             logger.info(strip_spaces(f"Calculated a new train set with \
-                {len(shuffled_train_ids)} datapoints (out of {len(self.train_set)})."))
+                {len(self.train_subset)} datapoints (out of {len(self.train_set)})."))
         if (self.sorting in BaseASR.DURATION_CL_KEYS) or self.use_default_training:
             logger.info("Duration-based sorting + subsampling. This implies that the `noisy` CL method cannot be used.")
             train_set = self.train_subset.filtered_sorted(
                 sort_key="duration",
                 reverse=True if self.sorting == "descending" else False,
             )
+        elif self.use_transfer_cl and isinstance(self.train_subset, FilteredSortedDynamicItemDataset):
+            train_set = self.train_subset
         else:
             train_set = self.train_subset.filtered_sorted(
                 sort_key=self.sorting,
                 sorting_dict=self.sorting_dict,
-                reverse=getattr(self.hparams, "reverse", False),
+                reverse=self.reverse,
                 noise_percentage=getattr(self.hparams, 'noisy_random_percentage', None),
             )
         logger.info(f"Size of the 'subsampled' trainset: {len(train_set)} and type: {type(train_set)} \
@@ -788,7 +893,7 @@ class BaseASR(sb.core.Brain, ABC):
                 )
 
                 # Debug mode only runs a few batches
-                if self.debug and self.step == self.debug_batches:
+                if self.debug:# and self.step == self.debug_batches:
                     break
 
                 if (
@@ -859,42 +964,54 @@ class BaseASR(sb.core.Brain, ABC):
                 fa.write('\n'.join(ordered_examples))
             logger.info("Log file saved under: {}".format(sorting_dict_log))
             self._curriculum_log_saved = True
-        # TODO: Doesn't handle ascending+subsample save
         if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
-            # assert hasattr(self, 'sorting_dict')
             save_folder = os.path.join(self.hparams.output_folder, "curriculum_logs")
             if not os.path.isdir(save_folder):
                 os.mkdir(save_folder)
+            # assert hasattr(self, 'sorting_dict')
             sorting_dict_log = os.path.join(save_folder, f"{self.dict_log_prefix}{self.sorting}_dict-epoch={epoch}.log")
-            ordered_examples = [f"{k}\t{v}" for k, v in sorted(sorting_dict.items(), key=lambda x: x[1], reverse=True)]
-        elif isinstance(getattr(self, 'train_set', None), FilteredSortedDynamicItemDataset) and self.sorting != "random":
+        elif isinstance(self.train_set, (FilteredSortedDynamicItemDataset, FilteredSortedFrequencyCL)) \
+          and self.sorting != "random":
             # Output path
             sorting_dict_log = os.path.join(self.hparams.output_folder, f"{self.dict_log_prefix}{self.sorting}_dict.log")
             if os.path.isfile(sorting_dict_log):
                 return
-            # These are the keys in sorted order
-            data_ids = self.train_set.data_ids
-            sort_key = "duration"
-            temp_keys = (set([] if self.sorting is None else [sort_key]))
-            filtered_ids = []
-            with self.train_set.output_keys_as(temp_keys):
-                for i, data_id in enumerate(data_ids):
-                    data_point = self.train_set.data[data_id]
-                    data_point["id"] = data_id
-                    computed = self.train_set.pipeline.compute_outputs(data_point)
-                    # Add (main sorting index, current index, data_id)
-                    # So that we maintain current sorting and don't compare
-                    # data_id values ever.
-                    filtered_ids.append((computed[sort_key], i, data_id))
-            # Here we will only save the ids of the sorted dataset since
-            # we don't have any values.
-            # `reverse` is always true so it doesn't matter if we have ascending
-            # or descneding-based curriculum.
-            ordered_examples = [f"{tup[2]}\t{tup[0]}" for tup in sorted(filtered_ids, reverse=True)]
+        ordered_examples = self._get_ordered_examples(sorting_dict)
+        __save__(sorting_dict_log, ordered_examples)
+    
+    def _get_ordered_examples(self, sorting_dict):
+        if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
+            # assert hasattr(self, 'sorting_dict')
+            ordered_examples = [f"{k}\t{v}" for k, v in sorted(sorting_dict.items(), key=lambda x: x[1], reverse=True)]
+        elif isinstance(self.train_set, (FilteredSortedDynamicItemDataset, FilteredSortedFrequencyCL)) \
+          and self.sorting != "random":
+            if self.sorting in FrequencyCL.VALID_FREQUENCY_TYPES:
+                ordered_dict = self.train_set.get_frequencies()
+                ordered_examples = [f"{key}\t{value}" for key, value in sorted(ordered_dict.items(), key=lambda x: x[1], reverse=True)]
+            else:
+                # These are the keys in sorted order
+                data_ids = self.train_set.data_ids
+                sort_key = "duration"
+                temp_keys = (set([] if self.sorting is None else [sort_key]))
+                filtered_ids = []
+                with self.train_set.output_keys_as(temp_keys):
+                    for i, data_id in enumerate(data_ids):
+                        data_point = self.train_set.data[data_id]
+                        data_point["id"] = data_id
+                        computed = self.train_set.pipeline.compute_outputs(data_point)
+                        # Add (main sorting index, current index, data_id)
+                        # So that we maintain current sorting and don't compare
+                        # data_id values ever.
+                        filtered_ids.append((computed[sort_key], i, data_id))
+                # Here we will only save the ids of the sorted dataset since
+                # we don't have any values.
+                # `reverse` is always true so it doesn't matter if we have ascending
+                # or descneding-based curriculum.
+                ordered_examples = [f"{tup[2]}\t{tup[0]}" for tup in sorted(filtered_ids, reverse=True)]
         else:
             raise NotImplementedError(f"Could not save sorting dict for method {self.sorting}\
                 when the type of the train set is {type(self.train_set)}.")
-        __save__(sorting_dict_log, ordered_examples)
+        return ordered_examples
 
     def _update_dict(self, batch_id, value, dur, sorting_method=None):
         if not isinstance(value, tuple):
@@ -973,7 +1090,14 @@ class BaseASR(sb.core.Brain, ABC):
         # NOTE: You will probably have to override this method.
         # logger.debug("Using the default implementation for seq_loss computation (`base_asr_model.py`).")
 
-        sorting_method = sorting_method or self.sorting
+        # sorting_method = sorting_method or self.sorting
+        if (sorting_method is None and \
+            len(self.sorting_dict) < len(self.current_trainset)) or \
+                not self.do_adaptive_pacing or \
+                    stage != sb.Stage.TRAIN:
+            sorting_method = self.sorting
+        if not self.do_adaptive_pacing:
+            assert sorting_method is not None, f"{sorting_method=}...{self.sorting=}...{len(self.sorting_dict)=}...{len(self.current_trainset)=}...{stage=}"
         # Computing seq2seq loss
         tokens_eos, tokens_eos_lens = self.prepare_tokens(
             stage, batch.tokens_eos
@@ -981,10 +1105,22 @@ class BaseASR(sb.core.Brain, ABC):
         p_seq = predictions["seq_logprobs"]
 
         reduction = "mean" if reduction == "batch" else reduction
-        postproc = lambda stage, batch, loss, predictions: loss
+        postproc = lambda stage, batch, loss, predictions, sorting_dict: loss
         if stage != sb.Stage.TRAIN:
             pass
         elif self.use_fixed_sorting is True:
+            pass
+        elif (self.current_epoch % self.curriculum_update_every != 0) and (not self.use_default_training):
+            # NOTE (IMPORTANT): If do_adaptive is true then when we pass the 
+            # first self.curriculum_update_every epochs, we will end up updating
+            # only certain entries of the sorting dictionary. I.e. At first the 
+            # dictionary will have 100% of the data, then after the 1st epoch
+            # the train set will be only e.g. 10% of the whole train set (due 
+            # to the adaptive pacing), ..., at the curriculum_update_every-th
+            # epochs the train set will still be a subset of the whole train set.
+            # This means that after curriculum_update_every the sorting dict will
+            # only update certain entries of it (the ones that are in the current
+            # train set). And so a micxture of the old and new sortings will be mixed.
             pass
         elif sorting_method == "seq_loss":
             reduction = "batch"
@@ -1002,7 +1138,7 @@ class BaseASR(sb.core.Brain, ABC):
             label_smoothing=self.hparams.label_smoothing,
             reduction=reduction
         )
-        loss_seq = postproc(stage, batch, loss_seq, predictions)
+        loss_seq = postproc(stage, batch, loss_seq, predictions, sorting_method)
         return loss_seq
     
     def _compute_ctc_loss(self, predictions, batch, stage=None, reduction="mean", sorting_method=None):
@@ -1010,7 +1146,14 @@ class BaseASR(sb.core.Brain, ABC):
         # logger.debug("Using the default implementation for ctc_loss computation (`base_asr_model.py`).")
         # Computing ctc loss
         assert hasattr(self, 'feat_lens')
-        sorting_method = sorting_method or self.sorting
+        if (sorting_method is None and \
+            len(self.sorting_dict) < len(self.current_trainset)) or \
+                not self.do_adaptive_pacing or \
+                    stage != sb.Stage.TRAIN:
+            sorting_method = self.sorting
+        if not self.do_adaptive_pacing:
+            assert sorting_method is not None, f"{sorting_method=}...{self.sorting=}...{len(self.sorting_dict)=}...{len(self.current_trainset)=}...{stage=}"
+        # sorting_method = sorting_method or self.sorting
         # tokens, tokens_lens = batch.tokens
         tokens, tokens_lens = self.prepare_tokens(stage, batch.tokens)
         if len(predictions) == 1:
@@ -1095,7 +1238,7 @@ class BaseASR(sb.core.Brain, ABC):
             # ###############################################
             # ########## For Curriculum Learning ############
             # ###############################################
-            save_dict["curriculum_step"] = self.train_set.step
+            save_dict["curriculum_step"] = getattr(self.train_set, "step", 0)
             save_dict["running_average"] = getattr(self.train_set, "running_average", 0)
             save_dict['curriculum_dict'] = self.sorting_dict
             dataset = self.train_subset if self.do_subsample and hasattr(self, 'train_subset') else self.train_set

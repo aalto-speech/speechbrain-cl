@@ -7,7 +7,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
 from cl.info.globals import MPL_COLORS
-from cl.utils import calculate_total_hours_seen
+from cl.info.time_stats import calculate_total_hours_seen
 from .statmd import _read_stats, NoEpochsTrained
 
 def get_train_times(log_txt_pattern, silent=False):
