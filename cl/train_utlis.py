@@ -55,7 +55,7 @@ from cl.asr_models import ASR, ASR_Old, AsrWav2Vec2
 from cl.curriculum import CurriculumDataset
 from cl.methods.frequency_cl import FrequencyCL
 from cl.filelist_tokenizer import FileListTokenizer
-from cl.utils import normalize_text, strip_spaces
+from cl.utils.process_utils import normalize_text, strip_spaces
 from cl.vad import testset_pipeline_with_segments, testset_pipeline_with_force_segments
 
 
@@ -118,7 +118,8 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
                     between the models are the same."))
         # Load hyperparameters
         with open(hparams["pretrained_model_hparams"]) as fin:
-            pretrained_hparams = load_hyperpyyaml(fin, overrides)
+            overrides2 = "\n".join([o for o in overrides.split("\n") if "sorting" not in o and "seed" not in o])
+            pretrained_hparams = load_hyperpyyaml(fin, overrides2)
         # Load tokenizer
         pm_tokenizer = get_tokenizer(pretrained_hparams, run_opts["device"])
         # Handle trainset pipeline (Here we are making a full copy of the trainset)
@@ -160,18 +161,25 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
             try_recover=False,
         )
         del train_dataset, pm_tokenizer, pretrained_hparams, asr_temp
-        asr_brain.train_set = asr_brain.train_set.filtered_sorted(
-            sort_key=hparams['sorting'], 
-            sorting_dict=sorting_dict,
-            reverse=hparams.get("reverse", False),
-        )
+        if not asr_brain.do_adaptive_pacing:
+            asr_brain.train_set = asr_brain.train_set.filtered_sorted(
+                sort_key=hparams['sorting'], 
+                sorting_dict=sorting_dict,
+                reverse=hparams.get("reverse", False),
+            )
+        else:
+            # otherwise the train set should stay as it is (a curriculum base)
+            pass
         asr_brain.sorting_dict = sorting_dict
         asr_brain.final_sortings = sorting_dict.copy()
     else:
         asr_brain.sorting_dict = {}
     
-    if hparams.get("use_fixed_sorting", False) and "pretrained_model_hparams" in hparams:
+    if hparams.get("use_fixed_sorting", False) \
+      and hparams.get("pretrained_model_hparams", None) not in [None, False]:
+        logger.info("Transfer learning CL approach...")
         if asr_brain.sorting_dict is None or len(asr_brain.sorting_dict) == 0:
+            logger.info("Loading the precomputed sorting dictionary for CL.")
             asr_brain.sorting_dict = asr_brain.load_sorting_dict(epoch=0)
         train_set = asr_brain.make_dataloader(
             dataset=asr_brain.train_set,
@@ -182,6 +190,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
     else:
         train_set = asr_brain.train_set
     # Training
+    # with torch.autograd.detect_anomaly():
     asr_brain.fit(
         asr_brain.hparams.epoch_counter,
         train_set,
@@ -222,12 +231,22 @@ def dataio_prepare(hparams, device):
     # with open(hparams['train_csv'], 'w', encoding='utf-8') as fw:
     #    fw.writelines(lines)
 
-    DatasetClass = FrequencyCL if hparams['sorting'] in FrequencyCL.VALID_FREQUENCY_TYPES else CurriculumDataset
-    
-    train_data = DatasetClass.from_csv(
-        csv_path=hparams["train_csv"],
-        replacements={"data_root": data_folder},
-    )
+
+    # Get tokenizer
+    tokenizer = get_tokenizer(hparams, device)
+
+    if hparams['sorting'] in FrequencyCL.VALID_FREQUENCY_TYPES:
+        train_data = FrequencyCL.from_csv(
+            csv_path=hparams["train_csv"],
+            replacements={"data_root": data_folder},
+            frequency_type=hparams['sorting'],
+            tokenizer=tokenizer,
+        )
+    else:
+        train_data = CurriculumDataset.from_csv(
+            csv_path=hparams["train_csv"],
+            replacements={"data_root": data_folder},
+        )
 
     if hparams["sorting"] in train_data.CURRICULUM_KEYS:
         # In this case the training set will change at the start of every epoch
@@ -236,6 +255,18 @@ def dataio_prepare(hparams, device):
         # when sorting do not shuffle in dataloader ! otherwise is pointless
         hparams["dataloader_options"]["shuffle"] = False
         train_data.sorting = hparams["sorting"]
+    
+    elif hparams['sorting'] in FrequencyCL.VALID_FREQUENCY_TYPES:
+        # In this case the training set will change only now based on char/word/token frequencies.
+        logger.info(f"Curriculum learning with '{hparams['sorting']}' sorting...")
+        # when sorting do not shuffle in dataloader ! otherwise is pointless
+        hparams["dataloader_options"]["shuffle"] = False
+        train_data = train_data.filtered_sorted(
+            sort_key=hparams['sorting'],
+            reverse=hparams.get("reverse", False),
+            noise_percentage=hparams.get('noisy_random_percentage', None),
+        )
+        print(f"Lenght of sorted dataset: {len(train_data)=}")
 
     elif hparams["sorting"] == "ascending":
         # we sort training data to speed up training and get better results.
@@ -286,9 +317,6 @@ def dataio_prepare(hparams, device):
     if hparams.get("sort_test_set", True):
         # We also sort the test data
         test_data = test_data.filtered_sorted(sort_key="duration")
-
-    # Get tokenizer
-    tokenizer = get_tokenizer(hparams, device)
 
     datasets = [train_data, valid_data]
     if hparams.get("use_vad", False):

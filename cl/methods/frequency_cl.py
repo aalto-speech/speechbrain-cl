@@ -1,3 +1,4 @@
+import copy
 import re
 from collections import Counter
 import logging
@@ -5,6 +6,7 @@ from typing import Union, Callable, Dict, List, Optional, Tuple
 from cl.curriculum import CurriculumDataset
 from cl.filelist_tokenizer import FileListTokenizer
 from cl import utils
+from speechbrain.dataio.dataio import load_data_csv
 from speechbrain.dataio.dataset import FilteredSortedDynamicItemDataset
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 
@@ -12,29 +14,33 @@ from speechbrain.tokenizers.SentencePiece import SentencePiece
 logger = logging.getLogger(__name__)
 
 class InvalidFrequencyType(Exception): pass
+class NoTokenizerError(Exception): pass
 
 class FrequencyCL(CurriculumDataset):
-    VALID_FREQUENCY_TYPES = ['char', 'word', 'token']
     # Valid types:
     #   1. char: Uses character level frequency.
     #   2. word: Uses word level frequency.
     #   3. token: Token level frequency (e.g. BPE).
     DEFAULT_FREQUENCY_TYPE = "char"
+    VALID_FREQUENCY_TYPES = ['char', 'word', 'token']
 
-    def __init__(self, *args, **kwargs):
-        self.frequency_type: str = kwargs.pop("frequency_type", self.DEFAULT_FREQUENCY_TYPE)
+    def __init__(self, 
+      *args,
+      frequency_type=None, 
+      tokenizer=None, 
+      precomputed_freqs=None, 
+    ):
+        self.frequency_type: str = frequency_type
         # NOTE: self.precomputed_freqs should change at every epoch
         #       when using a pacing function (since the frequencies of the
         #       characters will change. BUT, we may also provide the frequencies
         #       of the whole training set and avoid the re-calculation).
-        self.precomputed_freqs: Dict[str, int] = kwargs.pop("precomputed_freqs", {})
-        if self.frequency_type == "token":
-            assert "tokenizer" in kwargs and \
-                (isinstance(kwargs["tokenizer"], SentencePiece) or \
-                    isinstance(kwargs["tokenizer"], FileListTokenizer)), "You should provide a valid tokenizer."
-        assert self.frequency_type in self.VALID_FREQUENCY_TYPES, f"{self.frequency_type} not in {self.VALID_FREQUENCY_TYPES}."
-        self.tokenizer: Union[SentencePiece, FileListTokenizer] = kwargs.pop("tokenizer", None)
-        super().__init__(*args, **kwargs)
+        self.precomputed_freqs: Dict[str, int] = precomputed_freqs or []
+        self.tokenizer: Union[SentencePiece, FileListTokenizer] = tokenizer
+        self._initialize()
+        super().__init__(*args)
+
+    def _initialize(self):
         self.calculate_frequency: Callable
         if self.frequency_type == "char":
             self.calculate_frequency = self._calculate_char_frequency
@@ -42,6 +48,10 @@ class FrequencyCL(CurriculumDataset):
             self.calculate_frequency = self._calculate_word_frequency
         elif self.frequency_type == "token":
             self.calculate_frequency = self._calculate_token_frequency
+            if self.tokenizer is None:
+                raise NoTokenizerError(f"The 'token' CL method requires you to provide a tokenizer.")
+            assert isinstance(self.tokenizer, SentencePiece) or \
+                isinstance(self.tokenizer, FileListTokenizer), "You should provide a valid tokenizer."
         else:
             raise InvalidFrequencyType(f"Invalid type of frequency calculator: {self.frequency_type}")
 
@@ -50,12 +60,12 @@ class FrequencyCL(CurriculumDataset):
         key_max_value: Optional[dict] ={},
         key_test: Optional[dict] = {},
         sort_key: Optional[str] = None,
-        reverse: bool = False,
-        select_n: int = None,
+        reverse: Optional[bool] = False,
+        select_n: Optional[int] = None,
         sorting_dict: Optional[dict] = None,
         hparams: Optional[dict] = None,
         noise_percentage: Optional[float] = None,
-    ) -> FilteredSortedDynamicItemDataset:
+    ):
         if sort_key in self.VALID_FREQUENCY_TYPES:
             filtered_sorted_ids = self._curriculum_filtered_ids(sorting_dict, reverse, select_n)
             if isinstance(noise_percentage, float) and 0.0 < noise_percentage <= 1.0:
@@ -63,7 +73,12 @@ class FrequencyCL(CurriculumDataset):
                 filtered_sorted_ids = CurriculumDataset.add_random_noise(filtered_sorted_ids, noise_percentage)
                 logger.info("Added some random noise among the easy examples.")
                 # logger.info(f"{filtered_sorted_ids[:10]=}")
-            filtered_trainset = FilteredSortedDynamicItemDataset(self, filtered_sorted_ids)
+            filtered_trainset = FilteredSortedFrequencyCL(
+                self, filtered_sorted_ids,
+                frequency_type=self.frequency_type,
+                tokenizer=self.tokenizer,
+                precomputed_freqs=self.precomputed_freqs,
+            )
             return filtered_trainset
         return super().filtered_sorted(
             key_min_value, key_max_value, key_test, sort_key, reverse, select_n, 
@@ -79,24 +94,26 @@ class FrequencyCL(CurriculumDataset):
         epsilon: float = None,
     ) -> List[str]:
         del epsilon  # not used
-        select_n = select_n or (getattr(self, "current_epoch_n_datapoints", None) or len(sorting_dict))
+        sorting_dict = sorting_dict or self.sorting_dict
+        select_n = select_n or (getattr(self, "current_epoch_n_datapoints", None) or len(self))
         sorting_dict = sorting_dict or {}
         if len(sorting_dict) == len(self) and len(sorting_dict) >= len(self.precomputed_freqs):
             self.precomputed_freqs = sorting_dict.copy()
             logger.warn("Using the sorting dictionary as precomputed freqs. This may lead to errors when\
                 calculating the frequency (since the sorting dictionary contains tuples).")
         select_n = round(select_n)
-        reverse_freqs = self.calculate_frequency()
-        reverse_freqs = utils.normalize_dict(reverse_freqs)
+        reverse_freqs = self.get_frequencies()
         filtered_sorted_ids: list = [utt_id for utt_id in sorted(
             reverse_freqs,
             key=lambda x: reverse_freqs[x],
             reverse=not reverse)
         ][:select_n]
+        print(f"5 first examples: {filtered_sorted_ids[:5]}")
+        print(f"5 last examples: {filtered_sorted_ids[-5:]}")
         if debug:
             # Make sure that the sorting was successfull (debugging).
             for i, j in zip(filtered_sorted_ids[:-1], filtered_sorted_ids[1:]):
-                if reverse:
+                if not reverse:
                     assert sorting_dict[i]>=sorting_dict[j], f"i:{i}, j:{j}, di: {sorting_dict[i]}, dj: {sorting_dict[j]}" 
                 else:
                     assert sorting_dict[i]<=sorting_dict[j], f"i:{i}, j:{j}, di: {sorting_dict[i]}, dj: {sorting_dict[j]}" 
@@ -105,22 +122,45 @@ class FrequencyCL(CurriculumDataset):
                 assert data_id in sorting_dict.keys(), f"Could not locate {data_id}."
         return filtered_sorted_ids
 
+    def get_frequencies(self):
+        if hasattr(self, 'reverse_freqs'):
+            return self.reverse_freqs
+        reverse_freqs = self.calculate_frequency()
+        return utils.process_utils.normalize_dict(reverse_freqs)
+
+    def get_scores(self):
+        reverse_freqs = self.get_frequencies()
+        max_freq = max(reverse_freqs.values())
+        scores = {k: max_freq-v for k, v in reverse_freqs.items()}
+        return scores
+
+    @classmethod
+    def from_csv(
+        cls, csv_path, replacements={}, dynamic_items=[], output_keys=[], **kwargs
+    ):
+        """Load a data prep CSV file and create a Dataset based on it."""
+        data = load_data_csv(csv_path, replacements)
+        return cls(data, dynamic_items, output_keys, **kwargs)
+        
+
     @staticmethod
     def clean_str(text):
-        return re.sub(r'[-\(\)\"#\/@;:<>\{\}\-=~|\.\?]', '', text).strip()
+        s = re.sub(r'[!-\(\)\"#\/@;:<>\{\}\-=~|\.\?]', ' ', text.lower()).strip()
+        return re.sub("\s+", " ", s)
     
     def _calculate_char_frequency(self):
         # Higher score -> easier example
         reverse_sorting_dict = {}
         with self.output_keys_as(['wrd', 'id']) as dataset_trans:
-            if len(self.precomputed_freqs) != len(dataset_trans):
+            if len(self.precomputed_freqs) < len(dataset_trans):
                 characters = ""
                 for item in dataset_trans:
                     characters += self.clean_str(item['wrd'])
-                self.precomputed_freqs = Counter(characters).pop(' ')
+                self.precomputed_freqs = Counter(characters)
+                self.precomputed_freqs.pop(' ')
             for item in dataset_trans:
-                trans = self.clean_str(item['wrd'])
-                easyness = sum([self.precomputed_freqs[char] for char in trans])
+                trans = self.clean_str(item['wrd']).replace(" ", "")
+                easyness = sum([self.precomputed_freqs[char] for char in trans]) / len(trans)
                 reverse_sorting_dict[item['id']] = easyness
         return reverse_sorting_dict
 
@@ -135,7 +175,7 @@ class FrequencyCL(CurriculumDataset):
                 self.precomputed_freqs = Counter(words)
             for item in dataset_trans:
                 words = self.clean_str(item['wrd']).split()
-                easyness = sum([self.precomputed_freqs[w] for w in words])
+                easyness = sum([self.precomputed_freqs[w] for w in words]) / len(words)
                 reverse_sorting_dict[item['id']] = easyness
         return reverse_sorting_dict
 
@@ -151,8 +191,32 @@ class FrequencyCL(CurriculumDataset):
                 self.precomputed_freqs = Counter(tokens)
             for item in dataset_trans:
                 tokens = tokenize(item['wrd'])
-                easyness = sum([self.precomputed_freqs[w] for w in tokens])
+                easyness = sum([self.precomputed_freqs[w] for w in tokens]) / len(tokens)
                 reverse_sorting_dict[item['id']] = easyness
         return reverse_sorting_dict
         
-    pass
+class FilteredSortedFrequencyCL(FrequencyCL):
+    """Possibly filtered, possibly sorted DynamicItemDataset.
+
+    Shares the static data (reference).
+    Has its own dynamic_items and output_keys (deepcopy).
+    """
+
+    def __init__(self, 
+      from_dataset, 
+      data_ids, 
+      frequency_type=None, 
+      tokenizer=None, 
+      precomputed_freqs=None
+    ):
+        self.frequency_type: str = frequency_type
+        # NOTE: self.precomputed_freqs should change at every epoch
+        #       when using a pacing function (since the frequencies of the
+        #       characters will change. BUT, we may also provide the frequencies
+        #       of the whole training set and avoid the re-calculation).
+        self.precomputed_freqs: Dict[str, int] = precomputed_freqs
+        self.tokenizer: Union[SentencePiece, FileListTokenizer] = tokenizer
+        super()._initialize()
+        self.data = from_dataset.data
+        self.data_ids = data_ids
+        self.pipeline = copy.deepcopy(from_dataset.pipeline)
