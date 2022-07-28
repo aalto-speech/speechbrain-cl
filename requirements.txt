@@ -1,16 +1,8 @@
-hyperpyyaml>=0.0.1
-joblib>=0.14.1
+wheel
 numpy>=1.17.0
 pre-commit>=2.3.0
-scipy>=1.4.1
-sentencepiece>=0.1.91
-torch>=1.7.1
-torchaudio>=0.7.2
-tqdm>=4.42.0
-huggingface_hub>=0.0.6
-SoundFile; sys_platform == 'win32'
+speechbrain @ git+https://github.com/geoph9/speechbrain@devcurr#egg=speechbrain
 transformers==4.4.0
 matplotlib==3.5.0
 seaborn==0.11.2
 argh==0.26.2
-speechbrain @ git+https://github.com/geoph9/speechbrain@devcurr#egg=speechbrain
