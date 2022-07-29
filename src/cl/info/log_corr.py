@@ -2,11 +2,17 @@ import argparse
 import os, glob
 import ast
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import warnings
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    sns.set()
+except ImportError:
+    # warnings.warn("Could not import matplotlib. If you are planning to use the visualization functions then you need to install it.")
+    pass
+
 from scipy.stats import spearmanr
 from tqdm import tqdm
-sns.set()
 
 
 class NoCurriculumOrderings(Exception): pass

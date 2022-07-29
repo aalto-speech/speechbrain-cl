@@ -1,5 +1,6 @@
 #!/m/teamwork/t40511_asr/p/curriculum-e2e/startover/sssb/bin/python
 import argparse
+import sys
 
 from .info.visualize import violinplots_by3 as testset_boxplot_comparison, plot_logs_dispatcher
 from .info.statmd import get_args, statmd, _add_parser_args
@@ -225,5 +226,8 @@ def dispatch():
     sign_test_parser = get_sign_test_parser(sign_test_parser)
     sign_test_parser.set_defaults(func=parse_sign_test_args)
 
-    args = parser.parse_args()
-    args.func(args)
+    if len(sys.argv)==1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+    # args = parser.parse_args()
+    return parser

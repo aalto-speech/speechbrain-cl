@@ -3,9 +3,14 @@ import json
 from operator import sub
 import os
 import glob
+import warnings
 from collections import Counter
-import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
+try:
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
+except ImportError:
+    # warnings.warn("Could not import matplotlib. If you are planning to use the visualization functions then you need to install it.")
+    pass
 from cl.info.globals import MPL_COLORS
 from cl.info.time_stats import calculate_total_hours_seen
 from .statmd import _read_stats, NoEpochsTrained

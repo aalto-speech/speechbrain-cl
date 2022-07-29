@@ -42,6 +42,7 @@ Authors
 
 import os
 from copy import deepcopy
+from cl.base_asr_model import BaseASR
 import torch
 import logging
 import speechbrain as sb
@@ -49,7 +50,6 @@ import torchaudio
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import run_on_main
-import webdataset as wds
 
 from cl.asr_models import ASR, ASR_Old, AsrWav2Vec2
 from cl.curriculum import CurriculumDataset
@@ -74,7 +74,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
         train_loader_kwargs = hparams["dataloader_options"]
 
     # Trainer initialization
-    asr_brain = ASR_Model(
+    asr_brain: BaseASR = ASR_Model(
         modules=hparams["modules"],
         hparams=hparams,
         run_opts=run_opts,
@@ -85,6 +85,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
         train_loader_kwargs=train_loader_kwargs,
         tokenizer=data['tokenizer'],
         sorting_dict=None,
+        profiler=hparams.get("profiler", None),
     )
     
     # Make sure that a checkpoint doesn't already exist
@@ -430,6 +431,7 @@ def webdataio_prepare(hparams):
         Dictionary containing "train", "valid", and "test" keys mapping to 
         WebDataset datasets dataloaders for them.
     """
+    import webdataset as wds
 
     tok_kwargs = {}
     tok_kwargs['bos_id'] = hparams['bos_index']
