@@ -254,7 +254,7 @@ class CurriculumDataset(CurriculumBase):
             filtered_sorted_ids: list = self._curriculum_filtered_ids(
                 sorting_dict, reverse, select_n,
             )
-        if isinstance(noise_percentage, float) and 0.0 < noise_percentage <= 1.0:
+        if isinstance(noise_percentage, float) and 0.0 < noise_percentage <= 1.0 and sort_key != "duration":
             # logger.info(f"{filtered_sorted_ids[:10]=}")
             filtered_sorted_ids = CurriculumDataset.add_random_noise(filtered_sorted_ids, noise_percentage)
             logger.info("Added some random noise among the easy examples.")
