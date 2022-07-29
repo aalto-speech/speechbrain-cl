@@ -1,8 +1,12 @@
-# import argh
 import argparse
 import os
 import csv
-import matplotlib.pyplot as plt
+import warnings
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    # warnings.warn("Could not import matplotlib. If you are planning to use the visualization functions then you need to install it.")
+    pass
 from .find_anomalies import separate_test_entry, FIRST_EXAMPLE_LINE, SEPARATOR
 
 

@@ -1,10 +1,14 @@
 import argparse
 import os
-import random
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import warnings
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+except ImportError:
+    # warnings.warn("Could not import matplotlib. If you are planning to use the visualization functions then you need to install it.")
+    pass
+
 from scipy.stats import spearmanr, pearsonr
 from tqdm import tqdm
 import json

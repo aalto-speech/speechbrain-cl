@@ -1,27 +1,29 @@
-import enum
-import itertools
 import json
 import math
 import os
-from collections import Counter, defaultdict
-from pyexpat import model
+from collections import Counter
 import sys
 import random
-import re
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
-import seaborn as sns
 import numpy as np
+import warnings
 # from numpy import mod
 from .statmd import NoEpochsTrained, _read_stats, get_args, _read_args
 from .find_anomalies import read_single
 from .get_train_times import _find_best_epoch
 from cl.info.globals import DARK_COLORS, MPL_COLORS, MAPPINGS, MPL_MARKERS, map_name, map_name_thesis
-sns.set()
+
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset
+    import seaborn as sns
+    sns.set()
+    plt.rcParams.update({'font.size': 19})
+except ImportError:
+    # warnings.warn("Could not import matplotlib. If you are planning to use the visualization functions then you need to install it.")
+    pass
 
 
-plt.rcParams.update({'font.size': 19})
 
 labels = []
 def add_label(violin, label, labs=labels):
