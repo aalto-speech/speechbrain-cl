@@ -75,9 +75,7 @@ python -m pip install -e .
 
 ## Usage
 
-Please see the [Command-line Reference] for details.
-
-The installed package is called `cl` and it can be used both as library and a CLI tool. The CLI is primarily intended for analyzing results of already trained models and may be buggy. Of course, they could still be useful and that's why the CLI options are documented. To check them, run `cl --help`.
+The installed package is called `cl` and it can be used both as library and a CLI tool. The CLI is primarily intended for analyzing the results of already trained models and may be buggy. Of course, they could still be useful and that's why the CLI options are documented.
 
 As a library, `cl` offers two main interfaces:
     - `cl.train_utils.fit`: Use this to fit a model based on some hyperparameters.
@@ -88,6 +86,8 @@ Check `examples/train.py` for an example of how to utilize them.
 The CL strategies are defined in the `cl.curriculum` file, while the `cl.base_asr_model.BaseASR` is the base class that handles updating the data loader (each time the CL strategy updates the ordering) and logging the necessary information.
 
 ### Command Line Interface
+
+Please see the [Command-line Reference] for details about the available options.
 
 ### More Advanced Usage
 
