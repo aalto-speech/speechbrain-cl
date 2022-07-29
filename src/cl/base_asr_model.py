@@ -184,6 +184,14 @@ class BaseASR(sb.core.Brain, ABC):
         # This needs to be different because on the TRAIN stage we also use curriculum.
         # An example implementation is to initialize the cer, wer computers.
         return
+    
+    # def _fit_train(self, train_set, epoch, enable):
+    #     # Make sure that the training set is processed in a correct way
+    #     train_set = self.on_stage_start(sb.Stage.TRAIN, epoch) or train_set
+    #     self._stage_start_called = True
+    #     o = super()._fit_train(train_set, epoch, enable)
+    #     self._stage_start_called = False
+    #     return o
 
     def make_random_dataloader(self):
         assert self.sorting == "random", self.sorting

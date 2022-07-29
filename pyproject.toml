@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "speechbrain-cl"
-version = "1.0a"
+version = "1.0.1a"
 description = "Implementation of multiple curriculum learning methods for speechbrain ASR (mirror from private repo)."
 authors = ["Georgios K. <geoph9@protonmail.com>"]
 license = "MIT"
@@ -30,6 +30,7 @@ pre-commit = ">=2.3.0"
 # speechbrain @ git+https://github.com/geoph9/speechbrain@devcurr#egg=speechbrain
 # speechbrain = { git = "https://github.com/geoph9/speechbrain", branch = "devcurr"}
 speechbrain-geoph9 = "0.5.12a0"
+# speechbrain = "0.5.12"
 transformers = "4.4.0"
 pandas = "1.4.*"
 # matplotlib = "3.5.0"
