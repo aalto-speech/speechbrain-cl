@@ -24,7 +24,7 @@
 
 - Implementation of multiple curriculum learning methods.
 - Scoring functions: shown to improve performance (on the expense of training time).
-- Pacing functions: improve training time (performance is on par to speechbrain's baseline).
+- Pacing functions: improve training time (while performance is on par with speechbrain's baseline).
 - Works as a library on top of `speechbrain`.
 
 
@@ -36,11 +36,15 @@ You can install _Speechbrain Cl_ via [pip] from [PyPI]:
 $ pip install speechbrain-cl
 ```
 
+This should handle all required dependencies, including `speechbrain`. In particular, we are using a modified version of speechbrain (which I try to keep as up-to-date as possible to the main sb repository). For more information check [this fork](https://github.com/geoph9/speechbrain/tree/devcurr).
+
 If you are using poetry, then do `poetry add speechbrain-cl`.
 
 **Important Note:** This is intended to work on linux systems and you will probably encounter issues if you try to run this package on windows (and OS-X, too, probably).
 
 ### From Github
+
+**This is not recommended unless you are sure you know what you are doing.**
 
 *Has only been tested on linux systems.*
 
@@ -61,7 +65,7 @@ python -m pip install build && python -m build
 python -m pip install dist/cl-1.0a0-py2.py3-none-any.whl
 ```
 
-- **Option 2:** Editable mode (you can perform changes to the source code):
+- **Option 2:** Editable mode:
 ```bash
 # Install package in editable mode
 # You first need to install `wheel` to avoid bdist_wheel errors.

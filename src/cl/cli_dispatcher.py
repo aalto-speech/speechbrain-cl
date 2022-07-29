@@ -230,3 +230,4 @@ def dispatch():
         parser.print_help(sys.stderr)
         sys.exit(1)
     # args = parser.parse_args()
+    return parser

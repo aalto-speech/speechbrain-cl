@@ -1,7 +1,7 @@
 # Usage
 
 ```{eval-rst}
-.. click:: cl.__main__:main
-    :prog: speechbrain-cl
-    :nested: full
+.. argparse:: 
+    :ref: cl.cli_dispatcher.dispatch
+    :prog: cl
 ```
