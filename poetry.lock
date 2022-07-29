@@ -984,16 +984,15 @@ optional = false
 python-versions = ">=3.6"
 
 [[package]]
-name = "speechbrain"
-version = "0.5.12"
+name = "speechbrain-geoph9"
+version = "0.5.12a0"
 description = "All-in-one speech toolkit in pure Python and Pytorch"
 category = "main"
 optional = false
 python-versions = ">=3.7"
-develop = false
 
 [package.dependencies]
-huggingface-hub = ">=0.7.0"
+huggingface_hub = ">=0.7.0"
 hyperpyyaml = ">=0.0.1"
 joblib = ">=0.14.1"
 numpy = ">=1.17.0"
@@ -1005,12 +1004,6 @@ SoundFile = {version = "*", markers = "sys_platform == \"win32\""}
 torch = ">=1.9.0"
 torchaudio = ">=0.9.0"
 tqdm = ">=4.42.0"
-
-[package.source]
-type = "git"
-url = "https://github.com/geoph9/speechbrain"
-reference = "devcurr"
-resolved_reference = "e6edefa13ccb923678a95eb65be2e377a254d8b4"
 
 [[package]]
 name = "sphinx"
@@ -1380,7 +1373,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8, <3.10"
-content-hash = "176932da6fbfd7fd817c2883701c3ca507fb004b6b49c636c0f817e06868925f"
+content-hash = "5ddea3175eca990e34e1bc1f70d2f6dbc754661da6864d95072cab22bcd8aca2"
 
 [metadata.files]
 alabaster = [
@@ -2126,7 +2119,9 @@ soupsieve = [
     {file = "soupsieve-2.3.2.post1-py3-none-any.whl", hash = "sha256:3b2503d3c7084a42b1ebd08116e5f81aadfaea95863628c80a3b774a11b7c759"},
     {file = "soupsieve-2.3.2.post1.tar.gz", hash = "sha256:fc53893b3da2c33de295667a0e19f078c14bf86544af307354de5fcf12a3f30d"},
 ]
-speechbrain = []
+speechbrain-geoph9 = [
+    {file = "speechbrain-geoph9-0.5.12a0.tar.gz", hash = "sha256:0d7c189d14156fed232ee04589e6f2de2a33c965efad4aab9d1587544ae04dfd"},
+]
 sphinx = [
     {file = "Sphinx-5.1.1-py3-none-any.whl", hash = "sha256:309a8da80cb6da9f4713438e5b55861877d5d7976b69d87e336733637ea12693"},
     {file = "Sphinx-5.1.1.tar.gz", hash = "sha256:ba3224a4e206e1fbdecf98a4fae4992ef9b24b85ebf7b584bb340156eaf08d89"},

@@ -53,14 +53,15 @@ class BaseASR(sb.core.Brain, ABC):
     CURRICULUM_KEYS = CurriculumDataset.CURRICULUM_KEYS
 
     def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
-                 checkpointer=None, sorting=None, train_set=None, train_loader_kwargs=None,
+                 checkpointer=None, profiler=None, sorting=None, train_set=None, train_loader_kwargs=None,
                  sorting_dict=None, final_sorting_dict=None):
         super(BaseASR, self).__init__(
             modules=modules,
             opt_class=opt_class,
             hparams=hparams, 
             run_opts=run_opts, 
-            checkpointer=checkpointer
+            checkpointer=checkpointer,
+            profiler=profiler,
         )
         self.sorting: str = (sorting or "").lower()
         self.train_set: CurriculumDataset = train_set
@@ -76,7 +77,7 @@ class BaseASR(sb.core.Brain, ABC):
         if not hasattr(self.hparams, 'number_of_curriculum_epochs'):
             self.hparams.number_of_curriculum_epochs = self.hparams.number_of_epochs
         # Whether to do profiling or not (helps in debugging)
-        self.profiler = getattr(self.hparams, "profiler", False)
+        self.cprofiler = getattr(self.hparams, "cprofiler", False)
         # A dictionary keeping the "curriculum values" (orderings based on CL).
         # If we are using CL then it will also be saved and recovered during checkpointing.
         self.sorting_dict: dict = sorting_dict or final_sorting_dict or {}  # initialize it and it will be filled while training
@@ -1319,7 +1320,7 @@ class BaseASR(sb.core.Brain, ABC):
         return (n_sorted_datapoints, ckpt.meta["unixtime"])
         
     def _profile(self, func, out_file='curriculum_sort.prof', *args, **kwargs):
-        if not getattr(self, 'profiler', False):
+        if not getattr(self, 'cprofiler', False):
             return  # no profiling will be performed
         import cProfile
         import pstats

@@ -28,7 +28,8 @@ python = ">=3.8, <3.10"
 # numpy = ">=1.17.0"
 pre-commit = ">=2.3.0"
 # speechbrain @ git+https://github.com/geoph9/speechbrain@devcurr#egg=speechbrain
-speechbrain = { git = "https://github.com/geoph9/speechbrain", branch = "devcurr"}
+# speechbrain = { git = "https://github.com/geoph9/speechbrain", branch = "devcurr"}
+speechbrain-geoph9 = "0.5.12a0"
 transformers = "4.4.0"
 pandas = "1.4.*"
 # matplotlib = "3.5.0"
