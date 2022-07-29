@@ -42,6 +42,7 @@ Authors
 
 import os
 from copy import deepcopy
+from cl.base_asr_model import BaseASR
 import torch
 import logging
 import speechbrain as sb
@@ -74,7 +75,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
         train_loader_kwargs = hparams["dataloader_options"]
 
     # Trainer initialization
-    asr_brain = ASR_Model(
+    asr_brain: BaseASR = ASR_Model(
         modules=hparams["modules"],
         hparams=hparams,
         run_opts=run_opts,

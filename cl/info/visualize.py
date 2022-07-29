@@ -687,6 +687,8 @@ def testset_boxplot_comparison(args):
             v = plt.violinplot([ins], [pos])
             mnames.append(mname)
             add_label(v, mname, labels)
+        cax = plt.gca()
+        cax.set_ylim([-1.5, 25])
         plt.xticks(list(range(len(insertions))), mnames)
         # plt.legend(*zip(*labels), prop={'size': 8}, framealpha=0.65)
         plt.title("Insertions", fontsize=15)
@@ -696,6 +698,8 @@ def testset_boxplot_comparison(args):
             v = plt.violinplot([dels], [pos])
             add_label(v, mname, labels)
         # plt.legend(*zip(*labels), prop={'size': 8})
+        cax = plt.gca()
+        cax.set_ylim([-1.5, 25])
         plt.xticks(list(range(len(insertions))), mnames)
         plt.title("Deletions", fontsize=15)
         labels = []
@@ -703,6 +707,8 @@ def testset_boxplot_comparison(args):
         for pos, (mname, subs) in enumerate(substitutions):
             v = plt.violinplot([subs], [pos])
             add_label(v, mname, labels)
+        # cax = plt.gca()
+        # cax.set_ylim([None, 30])
         # plt.legend(*zip(*labels), prop={'size': 8})
         plt.xticks(list(range(len(insertions))), mnames)
         plt.title("Substitutions", fontsize=15)
