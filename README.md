@@ -6,9 +6,8 @@
 [![License](https://img.shields.io/pypi/l/speechbrain-cl)][license]
 
 [![Read the documentation at https://speechbrain-cl.readthedocs.io/](https://img.shields.io/readthedocs/speechbrain-cl/latest.svg?label=Read%20the%20Docs)][read the docs]
-[![Tests](https://github.com/geoph9/speechbrain-cl/workflows/Tests/badge.svg)][tests]
-[![Codecov](https://codecov.io/gh/geoph9/speechbrain-cl/branch/main/graph/badge.svg)][codecov]
-
+<!-- [![Tests](https://github.com/geoph9/speechbrain-cl/workflows/Tests/badge.svg)][tests] -->
+<!-- [![Codecov](https://codecov.io/gh/geoph9/speechbrain-cl/branch/main/graph/badge.svg)][codecov] -->
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)][pre-commit]
 [![Black](https://img.shields.io/badge/code%20style-black-000000.svg)][black]
 
@@ -16,8 +15,8 @@
 [status]: https://pypi.org/project/speechbrain-cl/
 [python version]: https://pypi.org/project/speechbrain-cl
 [read the docs]: https://speechbrain-cl.readthedocs.io/
-[tests]: https://github.com/geoph9/speechbrain-cl/actions?workflow=Tests
-[codecov]: https://app.codecov.io/gh/geoph9/speechbrain-cl
+<!-- [tests]: https://github.com/geoph9/speechbrain-cl/actions?workflow=Tests -->
+<!-- [codecov]: https://app.codecov.io/gh/geoph9/speechbrain-cl -->
 [pre-commit]: https://github.com/pre-commit/pre-commit
 [black]: https://github.com/psf/black
 

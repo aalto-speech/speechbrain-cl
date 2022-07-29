@@ -54,7 +54,7 @@ or the command-line interface:
 
 ```console
 $ poetry run python
-$ poetry run speechbrain-cl
+$ poetry run cl
 ```
 
 [poetry]: https://python-poetry.org/
