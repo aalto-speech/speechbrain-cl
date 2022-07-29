@@ -73,13 +73,14 @@ class FileListTokenizer:
             output_folder = self.hparams.get("spm_folder", self.hparams['save_folder'])
         
         # 2. Now create a .txt file of all transcripts combined
-        self.text_file: str = os.path.join(output_folder, "lp-train-complete-sp.txt")# self.hparams["train_csv"].replace(".csv", "_sp.txt")
+        self.text_file: str = os.path.join(output_folder, "train-sp.txt")# self.hparams["train_csv"].replace(".csv", "_sp.txt")
         # 3. Define tokenizer's model file
         self.prefix_model_file = os.path.join(
             output_folder, 
             self.vocab_size + "_" + self.model_type
         )
         if not os.path.isfile(self.prefix_model_file+".model"):
+            logger.info("Creating a filelist path and training the BPE model.")
             if not os.path.isfile(self.text_file):
                 run_on_main(self.filelist_to_text, kwargs={"filelist_path": lp_trans_path})
             # 4. Now train a bpe model
