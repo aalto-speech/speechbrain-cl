@@ -3,15 +3,13 @@ import pytest
 
 from cl import cli_dispatcher
 
-
-@pytest.fixture
-def runner():
-    """Fixture for invoking command-line interfaces."""
-    return
-
-
-def test_main_succeeds(runner) -> None:
+@pytest.mark.parametrize("option", ("-h", "--help"))
+def test_help_succeeds(capsys, option) -> None:
     """It exits with a status code of zero."""
-    # result = runner.invoke(__main__.main)
-    # assert result.exit_code == 0
+    try:
+        cli_dispatcher.dispatch([option])
+    except SystemExit:
+        pass
+    output = capsys.readouterr().out
+    assert "show this help message and exit" in output, output
     return

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-import re
-import torch
 import logging
+import re
+
 import speechbrain as sb
+import torch
 from speechbrain.utils.data_utils import undo_padding
+
 from cl.base_asr_model import BaseASR
 
 
@@ -11,22 +13,34 @@ logger = logging.getLogger(__name__)
 
 # Define training procedure
 class ASR_Old(BaseASR):
-    def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
-                 checkpointer=None, sorting=None, train_set=None, tokenizer=None,
-                 train_loader_kwargs=None, *args, **kwargs):
+    def __init__(
+        self,
+        modules=None,
+        opt_class=None,
+        hparams=None,
+        run_opts=None,
+        checkpointer=None,
+        sorting=None,
+        train_set=None,
+        tokenizer=None,
+        train_loader_kwargs=None,
+        *args,
+        **kwargs
+    ):
         super(ASR, self).__init__(
             modules=modules,
             opt_class=opt_class,
-            hparams=hparams, 
-            run_opts=run_opts, 
+            hparams=hparams,
+            run_opts=run_opts,
             checkpointer=checkpointer,
             sorting=sorting,
             train_set=train_set,
             train_loader_kwargs=train_loader_kwargs,
-            *args, **kwargs,
+            *args,
+            **kwargs,
         )
         self.tokenizer = tokenizer
-    
+
     def compute_forward(self, batch, stage):
         """Forward computations from the waveform batches to the output probabilities."""
 
@@ -87,27 +101,31 @@ class ASR_Old(BaseASR):
         ids = batch.id
 
         loss = self.compute_loss(
-            predictions, 
-            batch, 
-            stage=stage, 
-            reduction="mean", 
-            weight=self.hparams.ctc_weight
+            predictions,
+            batch,
+            stage=stage,
+            reduction="mean",
+            weight=self.hparams.ctc_weight,
         )
 
         if stage != sb.Stage.TRAIN:
             tokens, tokens_lens = batch.tokens
             # Decode token terms to words
             # logging.info(f"predicted tokens: {predicted_tokens}")
-            predicted_words = self.tokenizer(
-                predicted_tokens, task="decode_from_list"
-            )
+            predicted_words = self.tokenizer(predicted_tokens, task="decode_from_list")
 
             # Convert indices to words
             target_words = undo_padding(tokens, tokens_lens)
             target_words = self.tokenizer(target_words, task="decode_from_list")
             # Process predictions and truth so that they don't contain special tokens (.br, .fr etc)
-            predicted_words = [re.sub("\.\w+|-", "", ' '.join(txt)).strip().split() for txt in predicted_words]
-            target_words = [re.sub("\.\w+|-", "", ' '.join(txt)).strip().split() for txt in target_words]
+            predicted_words = [
+                re.sub(r"\.\w+|-", "", " ".join(txt)).strip().split()
+                for txt in predicted_words
+            ]
+            target_words = [
+                re.sub(r"\.\w+|-", "", " ".join(txt)).strip().split()
+                for txt in target_words
+            ]
             # import random
             # if random.random() > 0.99:
             #     print("  preds-truth pairs:", list(zip(predicted_words, target_words))[:1])
@@ -161,7 +179,8 @@ class ASR_Old(BaseASR):
                 valid_stats=stage_stats,
             )
             self.checkpointer.save_and_keep_only(
-                meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
+                meta={"WER": stage_stats["WER"]},
+                min_keys=["WER"],
             )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
@@ -170,7 +189,6 @@ class ASR_Old(BaseASR):
             )
             with open(self.hparams.wer_file, "w") as w:
                 self.wer_metric.write_stats(w)
-            if hasattr(self.hparams, 'cer_file'):
+            if hasattr(self.hparams, "cer_file"):
                 with open(self.hparams.cer_file, "w") as c:
                     self.cer_metric.write_stats(c)
-

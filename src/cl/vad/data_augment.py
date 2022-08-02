@@ -4,9 +4,11 @@ Authors
  * Mirco Ravanelli 2020
 """
 
+import random
+
 import torch
 import torchaudio
-import random
+
 
 # fade-in/fade-out definition
 fade_in = torchaudio.transforms.Fade(fade_in_len=1000, fade_out_len=0)
@@ -104,9 +106,7 @@ def add_chunk(
     )
 
     # Fetch the signal to append
-    wav_to_paste = wav[
-        :, begin_sample : begin_sample + (end_chunk - chunk_shift)
-    ]
+    wav_to_paste = wav[:, begin_sample : begin_sample + (end_chunk - chunk_shift)]
 
     # Random amplitude
     max_v, p = wav_to_paste.abs().max(1)
@@ -135,9 +135,7 @@ def add_chunk(
         target[:, beg_speech_target:end_speech_target] = 1
 
     # Lenth computation
-    lenghts = torch.ones(
-        wav_chunk.shape[0], wav_chunk.shape[-1], device=wav.device
-    )
+    lenghts = torch.ones(wav_chunk.shape[0], wav_chunk.shape[-1], device=wav.device)
     return wav_chunk, target, lenghts, end_chunk
 
 
@@ -145,9 +143,7 @@ def initialize_targets(wav, sample_rate, time_resolution):
     "Initializes the targets."
     target_downsampling = sample_rate * time_resolution
     target_len = int(wav.shape[1] / (target_downsampling))
-    targets = torch.zeros(
-        (wav.shape[0], target_len, wav.shape[2]), device=wav.device
-    )
+    targets = torch.zeros((wav.shape[0], target_len, wav.shape[2]), device=wav.device)
     return targets
 
 
@@ -170,9 +166,7 @@ def get_samples_from_datasets(datasets, wav):
         A batch of new samples drawn from the input list of datasets.
     """
     # We want a sample of the same size of the original signal
-    samples = torch.zeros(
-        wav.shape[0], wav.shape[1], len(datasets), device=wav.device
-    )
+    samples = torch.zeros(wav.shape[0], wav.shape[1], len(datasets), device=wav.device)
 
     # Let's sample a sequence from each dataset
     for i, dataset in enumerate(datasets):
@@ -336,11 +330,7 @@ def augment_data(noise_datasets, speech_datasets, wavs, targets, lens_targ):
     wav_samples_speech = get_samples_from_datasets(speech_datasets, wavs)
 
     # Create chunk with noise=>speech transition
-    (
-        wav_noise_speech,
-        target_noise_speech,
-        lengths_noise_speech,
-    ) = create_chunks(
+    (wav_noise_speech, target_noise_speech, lengths_noise_speech,) = create_chunks(
         wav_samples_noise,
         wav_samples_speech,
         wav_samples_noise,
@@ -349,11 +339,7 @@ def augment_data(noise_datasets, speech_datasets, wavs, targets, lens_targ):
     )
 
     # Create chunk with speech=>noise transition
-    (
-        wav_speech_noise,
-        target_speech_noise,
-        lengths_speech_noise,
-    ) = create_chunks(
+    (wav_speech_noise, target_speech_noise, lengths_speech_noise,) = create_chunks(
         wav_samples_speech,
         wav_samples_noise,
         wav_samples_noise,
@@ -363,11 +349,7 @@ def augment_data(noise_datasets, speech_datasets, wavs, targets, lens_targ):
 
     # Create chunk with speech=>speech transition
     wav_samples_speech2 = torch.roll(wav_samples_speech, 1, dims=-1)
-    (
-        wav_speech_speech,
-        target_speech_speech,
-        lengths_speech_speech,
-    ) = create_chunks(
+    (wav_speech_speech, target_speech_speech, lengths_speech_speech,) = create_chunks(
         wav_samples_speech,
         wav_samples_speech2,
         wav_samples_noise,

@@ -1,23 +1,27 @@
 #!/usr/bin/python3
-from collections import defaultdict
-import random
-import os, glob
 import argparse
+import glob
 import json
+import os
+import random
 import warnings
+from collections import defaultdict
+
+
 try:
     import matplotlib.pyplot as plt
 except ImportError:
     # warnings.warn("Could not import matplotlib. If you are planning to use the visualization functions then you need to install it.")
     pass
 
-from cl.info.globals import MPL_COLORS, map_name
+from cl.info.globals import MPL_COLORS
+from cl.info.globals import map_name
 
 
 def read_wer_test(
-    exp_dirs, 
-    wer_test_file="wer_test.txt", 
-    out_path=None, 
+    exp_dirs,
+    wer_test_file="wer_test.txt",
+    out_path=None,
     wer_threshold=100,
     name_mappings_file=None,
 ):
@@ -36,13 +40,13 @@ def read_wer_test(
         raise IndexError(f"exp_dirs has a size of zero.")
     if os.path.isfile(name_mappings_file):
         print("YES")
-        with open(name_mappings_file, 'r') as f:
+        with open(name_mappings_file) as f:
             name_mappings = json.loads(f.read())
     else:
         name_mappings = None
     model_to_wer = {}
     for wf in wer_files:
-        with open(wf, 'r', encoding='utf-8') as f:
+        with open(wf, encoding="utf-8") as f:
             wer = float(f.readline().split()[1])
         if wer > wer_threshold:
             continue
@@ -79,73 +83,109 @@ def read_wer_test(
 
     models, wers = list(map(list, zip(*sorted(zip(models, wers), key=lambda x: x[1]))))
 
-    fig, ax = plt.subplots(figsize =(16, 9))
-    
+    fig, ax = plt.subplots(figsize=(16, 9))
+
     # Horizontal Bar Plot
     barplot = ax.barh(models, wers)
-    
+
     # Remove axes splines
-    for s in ['top', 'bottom', 'left', 'right']:
+    for s in ["top", "bottom", "left", "right"]:
         ax.spines[s].set_visible(False)
     random.shuffle(MPL_COLORS)
-    random_colors = (MPL_COLORS * round(len(models)/len(MPL_COLORS) + 0.5))[:len(models)]
+    random_colors = (MPL_COLORS * round(len(models) / len(MPL_COLORS) + 0.5))[
+        : len(models)
+    ]
     for i in range(len(models)):
         barplot[i].set_color(random_colors[i])
-    
+
     # Remove x, y Ticks
-    ax.xaxis.set_ticks_position('none')
-    ax.yaxis.set_ticks_position('none')
-    
+    ax.xaxis.set_ticks_position("none")
+    ax.yaxis.set_ticks_position("none")
+
     # Add padding between axes and labels
-    ax.xaxis.set_tick_params(pad = 5)
-    ax.yaxis.set_tick_params(pad = 10)
-    
+    ax.xaxis.set_tick_params(pad=5)
+    ax.yaxis.set_tick_params(pad=10)
+
     # Add x, y gridlines
-    ax.grid(b = True, color ='grey',
-            linestyle ='-.', linewidth = .8,
-            alpha = 0.4)
-    
+    ax.grid(b=True, color="grey", linestyle="-.", linewidth=0.8, alpha=0.4)
+
     # Show top values
     ax.invert_yaxis()
-    
+
     # Add annotation to bars
     for i in ax.patches:
-        plt.text(i.get_width()+0.2, i.get_y()+0.5,
-                str(round((i.get_width()), 2)),
-                fontsize = 10, fontweight ='bold',
-                color ='grey')
-    
+        plt.text(
+            i.get_width() + 0.2,
+            i.get_y() + 0.5,
+            str(round((i.get_width()), 2)),
+            fontsize=10,
+            fontweight="bold",
+            color="grey",
+        )
+
     # Add Plot Title
-    ax.set_title("Word Error Rate (WER) for each model",
-                loc ='left', )
+    ax.set_title(
+        "Word Error Rate (WER) for each model",
+        loc="left",
+    )
 
     fig.tight_layout()
     if out_path is not None:
         plt.savefig(out_path)
     else:
         plt.show()
-    
+
 
 def _get_parser(parser=None):
     if parser is None:
         parser = argparse.ArgumentParser()
-    parser.add_argument("exps", nargs="+", help="E.g. `/path/to/exps/` or\
-        `/path/to/exps/exp1/1001/ /path/to/exps/exp2/2002 ...`")
-    parser.add_argument("--vad", "-v", action="store_true", default=False,
-        help="If true then we will read wer files named wer_test_vadded.txt")
-    parser.add_argument("--forced-segmented", "-f", action="store_true", default=False,
-        help="If true then we will read wer files named wer_test_forced_segmented.txt")
-    parser.add_argument("--wer-suffix", "-s", required=False, default=None,
-        help="How should the wer txt file be named? Overrides the '-v' and '-f' options.")
-    parser.add_argument("--out-path", "-o", required=False, default=None,
-        help="Location of the output bar plot.")
-    parser.add_argument("--cer", action="store_true", default=False,
-        help="Use CER instead of WER.")
-    parser.add_argument("--model-name-mappings", "-m", default=None, 
+    parser.add_argument(
+        "exps",
+        nargs="+",
+        help="E.g. `/path/to/exps/` or\
+        `/path/to/exps/exp1/1001/ /path/to/exps/exp2/2002 ...`",
+    )
+    parser.add_argument(
+        "--vad",
+        "-v",
+        action="store_true",
+        default=False,
+        help="If true then we will read wer files named wer_test_vadded.txt",
+    )
+    parser.add_argument(
+        "--forced-segmented",
+        "-f",
+        action="store_true",
+        default=False,
+        help="If true then we will read wer files named wer_test_forced_segmented.txt",
+    )
+    parser.add_argument(
+        "--wer-suffix",
+        "-s",
+        required=False,
+        default=None,
+        help="How should the wer txt file be named? Overrides the '-v' and '-f' options.",
+    )
+    parser.add_argument(
+        "--out-path",
+        "-o",
+        required=False,
+        default=None,
+        help="Location of the output bar plot.",
+    )
+    parser.add_argument(
+        "--cer", action="store_true", default=False, help="Use CER instead of WER."
+    )
+    parser.add_argument(
+        "--model-name-mappings",
+        "-m",
+        default=None,
         help="Path to a .json file containing a dictionary with the keys\
               `curriculum_mappings`, `transfer_mappings` and `subset_mappings`.\
-              This remains to be documented.")
+              This remains to be documented.",
+    )
     return parser
+
 
 if __name__ == "__main__":
     parser = _get_parser()

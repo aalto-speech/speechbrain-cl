@@ -20,14 +20,17 @@ Authors
  * Mirco Ravanelli 2021
 """
 
-import sys
-import torch
 import logging
+import sys
+
 import numpy as np
 import speechbrain as sb
+import torch
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.utils.distributed import run_on_main
-from data_augment import augment_data
+
+from .data_augment import augment_data
+
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +83,7 @@ class VADBrain(sb.Brain):
 
         self.train_metrics.append(batch.id, torch.sigmoid(predictions), targets)
         if stage != sb.Stage.TRAIN:
-            self.valid_metrics.append(
-                batch.id, torch.sigmoid(predictions), targets
-            )
+            self.valid_metrics.append(batch.id, torch.sigmoid(predictions), targets)
         return loss
 
     def on_stage_start(self, stage, epoch=None):
@@ -122,7 +123,7 @@ class VADBrain(sb.Brain):
                 meta={"loss": stage_loss, "summary": summary},
                 num_to_keep=1,
                 min_keys=["loss"],
-                name="epoch_{}".format(epoch),
+                name=f"epoch_{epoch}",
             )
 
         elif stage == sb.Stage.TEST:
@@ -174,11 +175,7 @@ def dataio_prep(hparams):
             else []
         )
         gt = torch.zeros(
-            int(
-                np.ceil(
-                    hparams["example_length"] * (1 / hparams["time_resolution"])
-                )
-            )
+            int(np.ceil(hparams["example_length"] * (1 / hparams["time_resolution"])))
         )
         for indxs in boundaries:
             start, stop = indxs
@@ -189,9 +186,7 @@ def dataio_prep(hparams):
     datasets = [train, validation, test]
     sb.dataio.dataset.add_dynamic_item(datasets, audio_pipeline)
     sb.dataio.dataset.add_dynamic_item(datasets, vad_targets)
-    sb.dataio.dataset.set_output_keys(
-        datasets, ["id", "signal", "target", "speech"]
-    )
+    sb.dataio.dataset.set_output_keys(datasets, ["id", "signal", "target", "speech"])
 
     # Split dataset
     train_data, valid_data, test_data = datasets

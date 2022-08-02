@@ -1,32 +1,36 @@
 import ast
-from collections import defaultdict
 import glob
-from typing import List, Callable, Optional, Union, Collection
+import logging
 import os
 import re
-import logging
+import subprocess
+import unicodedata
+from collections import defaultdict
+from typing import Callable
+from typing import Collection
+from typing import List
+from typing import Optional
+from typing import Union
+
 import numpy as np
 import pandas as pd
-from speechbrain.dataio.dataset import DynamicItemDataset
-import torch
-import subprocess
-from tqdm import tqdm
-
 import speechbrain as sb
+import torch
 from speechbrain.dataio.dataloader import SaveableDataLoader
-import unicodedata
+from speechbrain.dataio.dataset import DynamicItemDataset
+from tqdm import tqdm
 
 
 logger = logging.getLogger(__name__)
 
 # From transcripts (relevant to lp)
-WORDS_TO_REMOVE = ['\[oov\]']
-SPECIAL_MARK_MATCHER = re.compile("\.\w+")
+WORDS_TO_REMOVE = [r"\[oov\]"]
+SPECIAL_MARK_MATCHER = re.compile(r"\.\w+")
 
 
 def checkpoint_wrapper_cl(func):
-    """ This wrapper recovers the dataloader to where it was stopped.
-    """
+    """This wrapper recovers the dataloader to where it was stopped."""
+
     def recover_if_applicable(brain, stage, epoch):
         dataloader = func(brain, stage, epoch)
         has_dict_been_recalculated = False
@@ -41,22 +45,22 @@ def checkpoint_wrapper_cl(func):
             # We don't want to reload a checkpoint after having
             # recalculated the sorting dictionary (i.e. when using
             # a pacing function).
-            logger.warning("NOT LOADING A CHECKPOINT SINCE WE JUST CREATED THE DICTIONARY.")
+            logger.warning(
+                "NOT LOADING A CHECKPOINT SINCE WE JUST CREATED THE DICTIONARY."
+            )
             return dataloader
         # if brain.do_subsample:
         #     # Don't try to load checkpoint when using a pacing function (subsampling)
         #     return dataloader
-        if hasattr(brain, 'train_subset'):
+        if hasattr(brain, "train_subset"):
             train_len = len(brain.train_subset)
         else:
             train_len = len(brain.train_set)
         if (
-            brain.sorting in brain.CURRICULUM_KEYS and \
-            len(brain.sorting_dict) < train_len
-           ) or (
-            brain.sorting == "random" and brain._loaded_checkpoint is False
-           ):
-             # Load latest checkpoint to resume training if interrupted
+            brain.sorting in brain.CURRICULUM_KEYS
+            and len(brain.sorting_dict) < train_len
+        ) or (brain.sorting == "random" and brain._loaded_checkpoint is False):
+            # Load latest checkpoint to resume training if interrupted
             if brain.checkpointer is not None:
                 old_epoch = brain.hparams.epoch_counter.current
                 brain.checkpointer.recover_if_possible(
@@ -67,24 +71,31 @@ def checkpoint_wrapper_cl(func):
                 brain._loaded_checkpoint = True
             # brain.hparams.epoch_counter.current += 1
         return dataloader
+
     return recover_if_applicable
 
-def calculate_dataset_hours(dataset: DynamicItemDataset, ids: Optional[List[str]] = None):
-    with dataset.output_keys_as(['duration', 'id']) as dataset_durs:
+
+def calculate_dataset_hours(
+    dataset: DynamicItemDataset, ids: Optional[List[str]] = None
+):
+    with dataset.output_keys_as(["duration", "id"]) as dataset_durs:
         if isinstance(ids, list) and len(ids) < len(dataset.data):
-            data = [dataset.data[utt_id]['duration'] for utt_id in ids]
+            data = [dataset.data[utt_id]["duration"] for utt_id in ids]
             total_duration = sum(data)
         else:
-            total_duration = sum(item['duration'] for item in dataset_durs)
-    return (total_duration/60)/60
+            total_duration = sum(item["duration"] for item in dataset_durs)
+    return (total_duration / 60) / 60
+
 
 def load_sorting_dictionary(path):
     if not os.path.isfile(path):
-        raise FileNotFoundError(f"Could not locate the sorting dictionary under: {path}.")
-    with open(path, 'r') as fr:
+        raise FileNotFoundError(
+            f"Could not locate the sorting dictionary under: {path}."
+        )
+    with open(path) as fr:
         sd = {}
         for line in fr:
-            line = re.sub("\s+|\t", " ", line).strip()
+            line = re.sub("\\s+|\t", " ", line).strip()
             try:
                 line = line.split()
                 utt_id = line[0]
@@ -95,23 +106,24 @@ def load_sorting_dictionary(path):
             sd[utt_id] = ast.literal_eval(score)
     return sd
 
+
 def save_sorting_dictionary(dictionary: dict, path: str):
     if not os.path.isdir(os.path.dirname(path)):
         raise FileNotFoundError(f"Could not locate the directory of: {path}.")
-    ordered_examples = [f"{k}\t{v}" for k, v in sorted(
-        dictionary.items(), 
-        key=lambda x: x[1], 
-        reverse=True
-    )]
+    ordered_examples = [
+        f"{k}\t{v}"
+        for k, v in sorted(dictionary.items(), key=lambda x: x[1], reverse=True)
+    ]
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, 'w') as fa:
+    with open(path, "w") as fa:
         # fa.write("ID\tScore\n")
-        fa.write('\n'.join(ordered_examples))
+        fa.write("\n".join(ordered_examples))
+
 
 def min_max_normalize(
     c: Union[list, np.ndarray, int, float],
     minimum: Optional[float] = None,
-    maximum: Optional[float] = None
+    maximum: Optional[float] = None,
 ) -> Union[np.ndarray, float]:
     if isinstance(c, list):
         c = np.asarray(c, dtype=np.float16)
@@ -124,22 +136,31 @@ def min_max_normalize(
         maximum = c.max()
     return (c - minimum) / (maximum - minimum)
 
+
 def confidence_normalization(
-    confidences: List[float], 
+    confidences: List[float],
     durations: Optional[List[float]] = None,
-    norm_func: Callable[[Union[list, np.ndarray, int, float], float, float], np.ndarray] = min_max_normalize,
-    epsilon: float = 1e-3
+    norm_func: Callable[
+        [Union[list, np.ndarray, int, float], float, float], np.ndarray
+    ] = min_max_normalize,
+    epsilon: float = 1e-3,
 ) -> List[float]:
-    """ Maps the initial confidence values (negative log likelihoods) to a positive
-        number between 0 and 1. If the new value is close to 0 then the confidence
-        is bad, while values close to 1 indicate a very confident prediction.
+    """Maps the initial confidence values (negative log likelihoods) to a positive
+    number between 0 and 1. If the new value is close to 0 then the confidence
+    is bad, while values close to 1 indicate a very confident prediction.
     """
     confidences = np.asarray(confidences, dtype=np.float16)
-    min_conf = confidences[np.where(np.isfinite(confidences))[0]].min()  # take the minimum number
+    min_conf = confidences[
+        np.where(np.isfinite(confidences))[0]
+    ].min()  # take the minimum number
     min_conf = min_conf + (np.sign(min_conf) * epsilon)
     if not np.isfinite(confidences).all():
-        logger.warn(strip_spaces("Found non-finite number in the `confidences` array. \
-            We are going to replace them with the minimum plus an epsilon."))
+        logger.warn(
+            strip_spaces(
+                "Found non-finite number in the `confidences` array. \
+            We are going to replace them with the minimum plus an epsilon."
+            )
+        )
         confidences[~np.isfinite(confidences)] = min_conf
     # Make them positive (if they aren't already)
     confidences = np.sign(min_conf) * confidences
@@ -151,6 +172,7 @@ def confidence_normalization(
     confidences /= np.asarray(durations, dtype=np.float16)
     return norm_func(confidences)
 
+
 def normalize_with_confs(d: dict, epsilon: float, norm_func=min_max_normalize) -> dict:
     # Step 1: Convert the dict to a list of tuples where the first elements are the ids
     #         E.g. d = [(id1, 87.23, -3.2, 8.1)]
@@ -158,7 +180,7 @@ def normalize_with_confs(d: dict, epsilon: float, norm_func=min_max_normalize) -
     #         Or, if keep_confs is False:
     #         E.g. d = [(id1, 87.23, 8.1)]
     #                  [(id,  wer,   dur)]
-    sorting_list = [(k, *v) for k, v in d.items() if k != 'num_datapoints']
+    sorting_list = [(k, *v) for k, v in d.items() if k != "num_datapoints"]
     # Step 2: Normalize the values into one single score
     if len(sorting_list[0]) == 4:  # then we also have durations
         # Short durations will give an extra penalty to the confidences
@@ -169,77 +191,85 @@ def normalize_with_confs(d: dict, epsilon: float, norm_func=min_max_normalize) -
     elif len(sorting_list[0]) == 3:  # then we have keep_confs=False
         ids, wers, durs = zip(*sorting_list)
     else:
-        raise ValueError(f"Expected to find tuples of either (wer, conf, dur) \
-            or just (wer, conf) but found {sorting_list[0]}.")
+        raise ValueError(
+            f"Expected to find tuples of either (wer, conf, dur) \
+            or just (wer, conf) but found {sorting_list[0]}."
+        )
     # Normalize everything to [0-1]
     wers = norm_func(list(wers))
     # max_wer = max(wers) + epsilon  # avoid zeros
     try:
-        return {identifier: ((wer+epsilon) * nconf, dur) for identifier, wer, dur, nconf in zip(ids, wers, durs, new_confs)}
+        return {
+            identifier: ((wer + epsilon) * nconf, dur)
+            for identifier, wer, dur, nconf in zip(ids, wers, durs, new_confs)
+        }
     except NameError:
         return {identifier: (wer, dur) for identifier, wer, dur in zip(ids, wers, durs)}
 
+
 def normalize_only_durs(d: dict, norm_func=min_max_normalize):
-    """ Perform normalization (min-max by default) on the values of 
-        a given dictionary. The dictionary values should be tuples where 
-        the first elemnt is some score value and the second element is 
-        the duration.
-        Args:
-            d: Dictionary of the form {key: (value, duration)}
-        Returns:
-            d: Dictionary of the form {key: (normalized_value, duration)}
+    """Perform normalization (min-max by default) on the values of
+    a given dictionary. The dictionary values should be tuples where
+    the first elemnt is some score value and the second element is
+    the duration.
+    Args:
+        d: Dictionary of the form {key: (value, duration)}
+    Returns:
+        d: Dictionary of the form {key: (normalized_value, duration)}
     """
     ld0 = list(d.values())[0]
     assert isinstance(ld0, tuple) and len(ld0) == 2, f"Not a valid tuple: {ld0}"
     del ld0
     # Pop 'num_datapoints' so it won't interfere with the min-max scores
-    num_datapoints = d.pop('num_datapoints', None)
+    num_datapoints = d.pop("num_datapoints", None)
     # E.g. if d={1: (2, 3), 2: (0.44, 1), 3: (0.5, 1.5)}
     #      then d_values_norm_iter will pass through [2/3, 0.44/1, 0.5/1.5]
     #      and so the min will be 0.5/1.5=0.33 and the max will be 2/3-0.66
     # If we don't do that then min_val and max_val will be tuples and we'll get an error
     # d_values_norm_iter = map(lambda val: val[0]/val[1], d.values())
-    max_val = max(map(lambda val: val[0]/val[1], d.values()))
-    min_val = min(map(lambda val: val[0]/val[1], d.values()))
+    max_val = max(map(lambda val: val[0] / val[1], d.values()))
+    min_val = min(map(lambda val: val[0] / val[1], d.values()))
     # Normalize to [0, 1] (min-max normalization by default)
     # Also divides each score with the corresponding duration
-    d = {k: (norm_func(v[0]/v[1], min_val, max_val), v[1]) for k, v in d.items()}
+    d = {k: (norm_func(v[0] / v[1], min_val, max_val), v[1]) for k, v in d.items()}
     if num_datapoints is not None:
-        d['num_datapoints'] = num_datapoints
+        d["num_datapoints"] = num_datapoints
     return d
 
 
 def normalize_dict(d: dict, norm_func=min_max_normalize):
-    """ Use this method to normalize the values of a dictionary when 
-        there are NO confidences/durations involved.
-        This simply performs a min-max normalization on the values.
+    """Use this method to normalize the values of a dictionary when
+    there are NO confidences/durations involved.
+    This simply performs a min-max normalization on the values.
     """
     # Pop 'num_datapoints' so it won't interfere with the min-max scores
-    num_datapoints = d.pop('num_datapoints', None)
+    num_datapoints = d.pop("num_datapoints", None)
     max_val = max(d.values())
     min_val = min(d.values())
     # Normalize to [0, 1] (min-max normalization by default)
     # d = dict_apply(d, func=norm_func, minimum=min_val, maximum=max_val)
     d = {k: norm_func(v, min_val, max_val) for k, v in d.items()}
     if num_datapoints is not None:
-        d['num_datapoints'] = num_datapoints
+        d["num_datapoints"] = num_datapoints
     return d
+
 
 def strip_spaces(s: str):
     return re.sub(r"\s+", " ", s)
 
+
 def order_variability(log_dir: str, by: str = "rank"):
-    """ Calculate the variability of the orderings as they are updated.
-        E.g. Do the orderings converge after a certain number of updates?
-        Args:
-            log_dir: Directory containing .log files with the curriculum
-                     orderings.
-        Returns:
-            diffs_mat: A matrix containing the differences across pairs of
-                       back-to-back ordering dictionaries.
-                       This matrix will have the same number of rows and one 
-                       column less than the original matrix which has data
-                       points as its rows and the epochs as its columns.
+    """Calculate the variability of the orderings as they are updated.
+    E.g. Do the orderings converge after a certain number of updates?
+    Args:
+        log_dir: Directory containing .log files with the curriculum
+                 orderings.
+    Returns:
+        diffs_mat: A matrix containing the differences across pairs of
+                   back-to-back ordering dictionaries.
+                   This matrix will have the same number of rows and one
+                   column less than the original matrix which has data
+                   points as its rows and the epochs as its columns.
     """
     files = glob.glob(os.path.join(log_dir, "*.log"))
     n_epochs = len(files)
@@ -251,12 +281,14 @@ def order_variability(log_dir: str, by: str = "rank"):
         for i, logfile in enumerate(files):
             sorting_dict = load_sorting_dictionary(logfile)
             # Normalize scores (so that they don't contain the duration) and sort based on scores
-            for rank, (k, v) in enumerate(sorted(normalize_only_durs(sorting_dict).items(), key=lambda x: x[1])):
+            for rank, (k, v) in enumerate(
+                sorted(normalize_only_durs(sorting_dict).items(), key=lambda x: x[1])
+            ):
                 ranks_per_utt[k].append(rank)
         rank_diffs = defaultdict(list)
         for k in ranks_per_utt.keys():
-            for i in range(n_epochs-1):
-                rank_diffs[k].append(abs(ranks_per_utt[k][i] - ranks_per_utt[k][i+1]))
+            for i in range(n_epochs - 1):
+                rank_diffs[k].append(abs(ranks_per_utt[k][i] - ranks_per_utt[k][i + 1]))
         rank_diffs = pd.DataFrame(rank_diffs)
         return rank_diffs
     scores_per_epoch = np.empty((n_datapoints, n_epochs))
@@ -268,22 +300,25 @@ def order_variability(log_dir: str, by: str = "rank"):
         # note: we use v[0] since v originally contains (value, duration).
         scores = [v[0] for _, v in sorted(sorting_dict.items(), key=lambda x: x[0])]
         scores_per_epoch[:, i] = scores
-    score_diffs = np.empty((n_datapoints, n_epochs-1))
+    score_diffs = np.empty((n_datapoints, n_epochs - 1))
     # iterate pairs of columns
     for i, (c1, c2) in enumerate(zip(scores_per_epoch.T[:-1], scores_per_epoch.T[1:])):
-        score_diffs[:, i] = c1-c2
+        score_diffs[:, i] = c1 - c2
     return score_diffs
 
+
 # Credits: https://github.com/geoph9/rust-wer/blob/master/python-equivalent/wer.py
-def cer_minimal(h: Collection[Union[int, str]], r: Collection[Union[int, str]]) -> float:
-    """ Calculation of Levenshtein distance.
-        Works only for iterables up to 254 elements (uint8).
-        O(nm) time and space complexity.
-        Args:
-            r : list of ints (encoded tokens) or a string
-            h : list of ints (encoded tokens) or a string
-        Return:
-            int
+def cer_minimal(
+    h: List[Union[int, str]], r: List[Union[int, str]]
+) -> float:
+    """Calculation of Levenshtein distance.
+    Works only for iterables up to 254 elements (uint8).
+    O(nm) time and space complexity.
+    Args:
+        r : list of ints (encoded tokens) or a string
+        h : list of ints (encoded tokens) or a string
+    Return:
+        int
     """
     # initialisation
     if len(h) == 0:
@@ -307,7 +342,7 @@ def cer_minimal(h: Collection[Union[int, str]], r: Collection[Union[int, str]]) 
                 substitution: np.uint8 = d[i - 1][j - 1] + 1
                 insertion: np.uint8 = d[i][j - 1] + 1
                 deletion: np.uint8 = d[i - 1][j] + 1
-                d[i][j] = min(substitution, insertion, deletion)
+                d[i][j] = np.min([substitution, insertion, deletion])
     return d[len(r)][len(h)]
 
 
@@ -315,9 +350,10 @@ def _process_text(text: str, remove_special_tokens: bool = False):
     text = re.sub("|".join(WORDS_TO_REMOVE), "", text).strip()
     if remove_special_tokens:
         # Special tokens are of the form .br, .fr, e.t.c.
-        text = re.sub("\.\w+", "", text)
-    text = re.sub("\s+", " ", text).strip()
+        text = re.sub(r"\.\w+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
+
 
 def normalize_text(line, remove_special_tokens=True, *args, **kwargs):
     line = re.sub(SPECIAL_MARK_MATCHER, "", line)
@@ -335,31 +371,35 @@ def normalize_text(line, remove_special_tokens=True, *args, **kwargs):
     # Just decide that everything will be lowercase:
     line = line.lower()
     # All whitespace to one space:
-    line = " ".join(line.strip().split()) 
+    line = " ".join(line.strip().split())
     # Remove all extra characters:
     line = "".join(char for char in line if char.isalpha() or char == " ")
     return line
 
+
 def filelist_to_text_gen(filelist_path: str, remove_special_tokens: bool = False):
-    """ Reads a filelist (a file containing paths to other text files), processes 
-        each file's text and yields each single line.
+    """Reads a filelist (a file containing paths to other text files), processes
+    each file's text and yields each single line.
     """
     assert os.path.isfile(filelist_path), f"Could not locate {filelist_path}."
-    with open(filelist_path, 'r') as fr:
+    with open(filelist_path) as fr:
         for txt_path in fr:
             txt_path = txt_path.replace("\n", "").strip()
             assert os.path.isfile(txt_path), f"Could not locate {txt_path}."
-            with open(txt_path, 'r') as ftxt:
-                proc_txt = [_process_text(txt, remove_special_tokens) for txt in ftxt.readlines()]
-                yield '\n'.join([txt for txt in proc_txt if txt not in ['', '\n']])
+            with open(txt_path) as ftxt:
+                proc_txt = [
+                    _process_text(txt, remove_special_tokens)
+                    for txt in ftxt.readlines()
+                ]
+                yield "\n".join([txt for txt in proc_txt if txt not in ["", "\n"]])
+
 
 def wccount(filename):
     try:
-        out = subprocess.Popen(['wc', '-l', filename],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT
-                            ).communicate()[0]
-        return int(out.partition(b' ')[0])
+        out = subprocess.Popen(
+            ["wc", "-l", filename], stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        ).communicate()[0]
+        return int(out.partition(b" ")[0])
     except:
         with open(filename) as f:
             num_lines = sum(1 for line in f)

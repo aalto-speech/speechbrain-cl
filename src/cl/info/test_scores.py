@@ -1,20 +1,25 @@
 import argparse
-import os
 import glob
-from cl.info.statmd import _read_stats, DEFAULT_METRICS, AVAILABLE_METRICS, NoEpochsTrained
+import os
+
+from cl.info.statmd import AVAILABLE_METRICS
+from cl.info.statmd import DEFAULT_METRICS
+from cl.info.statmd import NoEpochsTrained
+from cl.info.statmd import _read_stats
+
 
 def main(res_dir, metrics=DEFAULT_METRICS):
-    """ Prints out test statistics for all models inside a directory.
-        Expects `res_dir` to have many subdirectories containing iterations.
-        E.g. 
-        results
-        ├── crdnn_baseline
-        │   └── 1001
-        │   └── 1002
-        ├── crdnn_medium
-        │   └── 1001
-        └── crdnn_op
-            └── 1001
+    """Prints out test statistics for all models inside a directory.
+    Expects `res_dir` to have many subdirectories containing iterations.
+    E.g.
+    results
+    ├── crdnn_baseline
+    │   └── 1001
+    │   └── 1002
+    ├── crdnn_medium
+    │   └── 1001
+    └── crdnn_op
+        └── 1001
 
     """
     if isinstance(res_dir, list) and len(res_dir) > 1:
@@ -31,7 +36,7 @@ def main(res_dir, metrics=DEFAULT_METRICS):
         log_paths = glob.glob(os.path.join(res_dir[0], "*", "*", "log.txt"))
         log_paths += glob.glob(os.path.join(res_dir[0], "*", "log.txt"))
     else:
-        raise ValueError("Got invalid directory: {}.".format(res_dir))
+        raise ValueError(f"Got invalid directory: {res_dir}.")
     for log in log_paths:
         seed = os.path.dirname(log)
         model_name = os.path.basename(os.path.dirname(seed))
@@ -39,7 +44,9 @@ def main(res_dir, metrics=DEFAULT_METRICS):
         try:
             out = _read_stats([log], metrics, return_test_results=True)
         except NoEpochsTrained:
-            print("Model: {} (seed={})\n\tNo epochs trained :(".format(model_name, seed))
+            print(
+                f"Model: {model_name} (seed={seed})\n\tNo epochs trained :("
+            )
             continue
         if len(out) == 5 and len(out[-1]) > 0:
             # We only provide one log so the length of the test_results var is always 1.
@@ -48,51 +55,75 @@ def main(res_dir, metrics=DEFAULT_METRICS):
             valid_metrics_dict = out[-2]
             if "WER" in valid_metrics_dict:
                 best_valid_index = 0
-                for i in range(len(valid_metrics_dict['WER'])):
-                    if valid_metrics_dict['WER'][i][0] < valid_metrics_dict['WER'][best_valid_index][0]:
+                for i in range(len(valid_metrics_dict["WER"])):
+                    if (
+                        valid_metrics_dict["WER"][i][0]
+                        < valid_metrics_dict["WER"][best_valid_index][0]
+                    ):
                         best_valid_index = i
             else:
                 best_valid_index = -1
-            best_valid_epoch = [epochs[i][0] for i in range(len(epochs)) if i==best_valid_index][0]
-            s = "Model: {} (seed={})\n\tTest Loss: {}".format(model_name, seed, test_stat[0])
+            best_valid_epoch = [
+                epochs[i][0] for i in range(len(epochs)) if i == best_valid_index
+            ][0]
+            s = "Model: {} (seed={})\n\tTest Loss: {}".format(
+                model_name, seed, test_stat[0]
+            )
             for metric in metrics:
-                s += ", Test {}: {}".format(metric.capitalize(), test_stat[1][metric])
+                s += f", Test {metric.capitalize()}: {test_stat[1][metric]}"
             s += " ("
             for metric in metrics:
                 best_valid_metric = valid_metrics_dict[metric][best_valid_index][0]
-                s += "valid {}: {}, ".format(metric.lower(), best_valid_metric)
-            s += " best epoch: {})".format(best_valid_epoch)
+                s += f"valid {metric.lower()}: {best_valid_metric}, "
+            s += f" best epoch: {best_valid_epoch})"
             print(s)
         else:
             epochs = out[0][-1]
             max_epoch = epochs[-1]
             valid_metrics_dict = out[-2]
-            s = "Model: {} (seed={})\n\tCurrently on epoch {} with".format(model_name, seed, max_epoch)
+            s = "Model: {} (seed={})\n\tCurrently on epoch {} with".format(
+                model_name, seed, max_epoch
+            )
             for metric in metrics:
-                s+= " valid_{}={}, ".format(metric.lower(), valid_metrics_dict[metric][-1][0])
+                s += " valid_{}={}, ".format(
+                    metric.lower(), valid_metrics_dict[metric][-1][0]
+                )
             print(s[:-2])
+
 
 if __name__ == "__main__":
     metric_maps = {m[0].lower(): m for m in AVAILABLE_METRICS}
     reverse_maps = {v: k for k, v in metric_maps.items()}
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results-dir", "--res-dir", "-d", nargs="+", metavar="RESULTS_DIR", dest="res_dir", required=True, 
-        help="Path(s) to the directory containing the results of your models."
+    parser.add_argument(
+        "--results-dir",
+        "--res-dir",
+        "-d",
+        nargs="+",
+        metavar="RESULTS_DIR",
+        dest="res_dir",
+        required=True,
+        help="Path(s) to the directory containing the results of your models.",
     )
     parser.add_argument(
-        "--metrics", "-m", choices=AVAILABLE_METRICS+list(metric_maps.keys()), 
-        default=[], nargs="*",
-        help="Expected metric based on which we will extract the statistics. "\
-             "{} are the only ones currently allowed.".format(', '.join(
-                 [str(k) +  " (" + str(v) + ")" for k, v in reverse_maps.items()]
-            ))
+        "--metrics",
+        "-m",
+        choices=AVAILABLE_METRICS + list(metric_maps.keys()),
+        default=[],
+        nargs="*",
+        help="Expected metric based on which we will extract the statistics. "
+        "{} are the only ones currently allowed.".format(
+            ", ".join([str(k) + " (" + str(v) + ")" for k, v in reverse_maps.items()])
+        ),
     )
     # Also accept arguments as `--cer` or `--per`, `-p`
     for m in AVAILABLE_METRICS:
         parser.add_argument(
-            "--{}".format(m.lower()), "-{}".format(m[0].lower()), 
-            action="store_true", default=False,
-            help="Use {} as the expected metric.".format(m)
+            f"--{m.lower()}",
+            f"-{m[0].lower()}",
+            action="store_true",
+            default=False,
+            help=f"Use {m} as the expected metric.",
         )
     args = parser.parse_args()
     # e.g. map 'w' to 'WER'

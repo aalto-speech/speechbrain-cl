@@ -10,15 +10,19 @@ Authors
 
 """
 
-import os
 import logging
+import os
 import re
-import torch
+
 import sentencepiece as spm
+import torch
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.dataio.dataio import merge_char
 from speechbrain.utils.distributed import run_on_main
-from cl.utils.process_utils import _process_text, filelist_to_text_gen
+
+from cl.utils.process_utils import _process_text
+from cl.utils.process_utils import filelist_to_text_gen
+
 
 # torch.cuda.set_device(0)
 logger = logging.getLogger(__name__)
@@ -28,15 +32,17 @@ class FileListTokenizer:
     """This function train a SentencePiece model and saved it in the corresponding
     directory.
     """
-    def __init__(self, 
-        hparams, 
-        bos_id=-1, 
-        eos_id=-1, 
+
+    def __init__(
+        self,
+        hparams,
+        bos_id=-1,
+        eos_id=-1,
         pad_id=-1,
         unk_id=0,
         character_coverage=1.0,
         split_by_whitespace=True,
-        char_format_input=False, 
+        char_format_input=False,
         user_defined_symbols=None,
         max_sentencepiece_length=10,
         remove_special_tokens=False,
@@ -57,7 +63,9 @@ class FileListTokenizer:
         self.character_coverage = character_coverage
         self.char_format_input = char_format_input
         self.split_by_whitespace = split_by_whitespace
-        self.remove_special_tokens = remove_special_tokens or self.hparams.get('remove_special_tokens', False)
+        self.remove_special_tokens = remove_special_tokens or self.hparams.get(
+            "remove_special_tokens", False
+        )
         # 1. Get filelist containing paths to the transcript files
         #    E.g. /path/to/lp-trns.txt
         #    The file shall be in the format:
@@ -70,22 +78,25 @@ class FileListTokenizer:
         if lp_trans_path is None:
             raise ValueError("`lp_filelist` parameter missing from the yaml file.")
         if output_folder is None:
-            output_folder = self.hparams.get("spm_folder", self.hparams['save_folder'])
-        
+            output_folder = self.hparams.get("spm_folder", self.hparams["save_folder"])
+
         # 2. Now create a .txt file of all transcripts combined
-        self.text_file: str = os.path.join(output_folder, "train-sp.txt")# self.hparams["train_csv"].replace(".csv", "_sp.txt")
+        self.text_file: str = os.path.join(
+            output_folder, "train-sp.txt"
+        )  # self.hparams["train_csv"].replace(".csv", "_sp.txt")
         # 3. Define tokenizer's model file
         self.prefix_model_file = os.path.join(
-            output_folder, 
-            self.vocab_size + "_" + self.model_type
+            output_folder, self.vocab_size + "_" + self.model_type
         )
-        if not os.path.isfile(self.prefix_model_file+".model"):
+        if not os.path.isfile(self.prefix_model_file + ".model"):
             logger.info("Creating a filelist path and training the BPE model.")
             if not os.path.isfile(self.text_file):
-                run_on_main(self.filelist_to_text, kwargs={"filelist_path": lp_trans_path})
+                run_on_main(
+                    self.filelist_to_text, kwargs={"filelist_path": lp_trans_path}
+                )
             # 4. Now train a bpe model
             run_on_main(self._train_BPE)
-        
+
         # Create SentencePiece model
         logger.info("==== Loading Tokenizer ===")
         logger.info("Tokenizer path: " + self.prefix_model_file + ".model")
@@ -93,17 +104,19 @@ class FileListTokenizer:
         logger.info("Tokenizer type: " + self.model_type)
         self.sp = spm.SentencePieceProcessor()
         self.sp.load(self.prefix_model_file + ".model")
-    
+
     def _check_coverage_from_bpe(self, *args, **kwargs):
-        raise NotImplementedError("This method hasn't been implemented in the "+
-            "FileListTokenizer. If you need it, you may simply copy-paste the "+
-            "default speechbrain SentencePiece tokenizer's method.")
+        raise NotImplementedError(
+            "This method hasn't been implemented in the "
+            + "FileListTokenizer. If you need it, you may simply copy-paste the "
+            + "default speechbrain SentencePiece tokenizer's method."
+        )
 
     def filelist_to_text(self, filelist_path: str):
-        """ Converts a filelist of paths to transcripts to a single text file of 
-            all transcripts.
+        """Converts a filelist of paths to transcripts to a single text file of
+        all transcripts.
         """
-        with open(self.text_file, 'w') as fw:
+        with open(self.text_file, "w") as fw:
             for txt in filelist_to_text_gen(filelist_path, self.remove_special_tokens):
                 fw.write(txt)
 
@@ -147,11 +160,15 @@ class FileListTokenizer:
         spm.SentencePieceTrainer.train(query)
 
     def __call__(
-        self, batch, batch_lens=None, ind2lab=None, task="encode",
+        self,
+        batch,
+        batch_lens=None,
+        ind2lab=None,
+        task="encode",
     ):
-        """ Copy-pasted from the original file (check top).
+        """Copy-pasted from the original file (check top).
         The reason this is copy-pasted is not to require changes to the current code.
-        Ofc this could lead to issues if the main branch of speechbrain makes some 
+        Ofc this could lead to issues if the main branch of speechbrain makes some
         changes here, so please keep an eye.
         =============================================================================
         This __call__ function implements the tokenizer encoder and decoder
@@ -185,9 +202,7 @@ class FileListTokenizer:
             max_bpe_len = 0
             batch_lens = (batch_lens * batch.shape[1]).int()
             for i, utt_seq in enumerate(batch):
-                tokens = [
-                    ind2lab[int(index)] for index in utt_seq[: batch_lens[i]]
-                ]
+                tokens = [ind2lab[int(index)] for index in utt_seq[: batch_lens[i]]]
                 if self.char_format_input:
                     (words_list,) = merge_char([tokens])
                     sent = " ".join(words_list)
@@ -200,9 +215,7 @@ class FileListTokenizer:
                 if len(bpe_encode) > max_bpe_len:
                     max_bpe_len = len(bpe_encode)
             # Create bpe tensor
-            bpe_tensor = torch.zeros(
-                (batch.shape[0], max_bpe_len), device=batch.device
-            )
+            bpe_tensor = torch.zeros((batch.shape[0], max_bpe_len), device=batch.device)
             bpe_lens = torch.zeros((batch.shape[0]), device=batch.device)
             for i, bpe_utt in enumerate(bpe):
                 bpe_tensor[i, : len(bpe_utt)] = torch.Tensor(bpe_utt)
@@ -217,8 +230,6 @@ class FileListTokenizer:
             # find the absolute batch lengths and do decoding
             batch_lens = (batch_lens * batch.shape[1]).int()
             return [
-                self.sp.decode_ids(
-                    utt_seq[: batch_lens[i]].int().tolist()
-                ).split(" ")
+                self.sp.decode_ids(utt_seq[: batch_lens[i]].int().tolist()).split(" ")
                 for i, utt_seq in enumerate(batch)
             ]

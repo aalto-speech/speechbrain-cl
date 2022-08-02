@@ -39,7 +39,7 @@ function create_env() {
 }
 
 # Try to load the python3.8 module (triton).
-# If this fails (then we are not on triton probably) 
+# If this fails (then we are not on triton probably)
 # and we will simply create a new env.
 # Load python>3.6 (for speechbrain)
 module load python/3.8.7 || create_env

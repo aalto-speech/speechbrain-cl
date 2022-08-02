@@ -1,31 +1,45 @@
 #!/usr/bin/env python3
-import torch
 import logging
+
 import speechbrain as sb
-from cl.curriculum import CurriculumDataset
+import torch
+
 from cl.base_asr_model import BaseASR
+from cl.curriculum import CurriculumDataset
 
 
 logger = logging.getLogger(__name__)
 
 # Brain class for speech recognition training
 class ASR_Aku(BaseASR):
-    def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, 
-                 checkpointer=None, sorting=None, train_set=None, tokenizer=None,
-                 train_loader_kwargs=None, *args, **kwargs):
-        super(ASR_Aku, self).__init__(
+    def __init__(
+        self,
+        modules=None,
+        opt_class=None,
+        hparams=None,
+        run_opts=None,
+        checkpointer=None,
+        sorting=None,
+        train_set=None,
+        tokenizer=None,
+        train_loader_kwargs=None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
             modules=modules,
             opt_class=opt_class,
-            hparams=hparams, 
+            hparams=hparams,
             run_opts=run_opts,
             checkpointer=checkpointer,
             sorting=sorting,
             train_set=train_set,
             train_loader_kwargs=train_loader_kwargs,
-            *args, **kwargs,
+            *args,
+            **kwargs,
         )
         self.tokenizer = tokenizer
-    
+
     def compute_forward(self, batch, stage):
         """Runs all the computation of the CTC + seq2seq ASR. It returns the
         posterior probabilities of the CTC and seq2seq networks.
@@ -57,8 +71,12 @@ class ASR_Aku(BaseASR):
         embedded_tokens = self.modules.embedding(tokens_bos)
         # print(f"{encoded_signal.shape=} ====== {embedded_tokens.shape=}")
         if encoded_signal.shape[0] != embedded_tokens.shape[0]:
-            encoded_signal = encoded_signal.reshape(embedded_tokens.shape[0], -1, encoded_signal.shape[-1]).to(self.device)
-            assert encoded_signal.shape[0] == 1, "Batch size must be 1 in this case bcs otherwise we don't know how to reshape feat_lens"
+            encoded_signal = encoded_signal.reshape(
+                embedded_tokens.shape[0], -1, encoded_signal.shape[-1]
+            ).to(self.device)
+            assert (
+                encoded_signal.shape[0] == 1
+            ), "Batch size must be 1 in this case bcs otherwise we don't know how to reshape feat_lens"
             self.feat_lens = torch.Tensor([1.0]).to(self.device)
         # print(f"{embedded_tokens.device=}\n{encoded_signal.device=}\n{self.feat_lens.device=}")
         decoder_outputs, _ = self.modules.decoder(
@@ -75,15 +93,16 @@ class ASR_Aku(BaseASR):
                 ctc_logits = self.modules.ctc_lin(encoded_signal)
                 predictions["ctc_logprobs"] = self.hparams.log_softmax(ctc_logits)
             if self.sorting in CurriculumDataset.METRIC_SORTERS:
-                predictions["tokens"], predictions['scores'] = self.hparams.valid_search(
-                    encoded_signal, self.feat_lens
-                )
+                (
+                    predictions["tokens"],
+                    predictions["scores"],
+                ) = self.hparams.valid_search(encoded_signal, self.feat_lens)
         elif stage == sb.Stage.VALID:
-            predictions["tokens"], predictions['scores'] = self.hparams.valid_search(
+            predictions["tokens"], predictions["scores"] = self.hparams.valid_search(
                 encoded_signal, self.feat_lens
             )
         elif stage == sb.Stage.TEST:
-            predictions["tokens"], predictions['scores'] = self.hparams.test_search(
+            predictions["tokens"], predictions["scores"] = self.hparams.test_search(
                 encoded_signal, self.feat_lens
             )
 
@@ -113,11 +132,11 @@ class ASR_Aku(BaseASR):
         #     stage, batch.tokens_eos
         # )
         loss = self.compute_loss(
-            predictions, 
-            batch, 
-            stage=stage, 
-            reduction="mean", 
-            weight=self.hparams.ctc_weight
+            predictions,
+            batch,
+            stage=stage,
+            reduction="mean",
+            weight=self.hparams.ctc_weight,
         )
 
         if stage != sb.Stage.TRAIN:
@@ -126,11 +145,11 @@ class ASR_Aku(BaseASR):
             #     self.hparams.tokenizer.decode_ids(prediction).split(" ")
             #     for prediction in predictions["tokens"]
             # ]
-            predicted_tokens = [h[0] for h in predictions['tokens']]
+            predicted_tokens = [h[0] for h in predictions["tokens"]]
             self._valid_test_objectives(batch, predicted_tokens, stage)
 
         return loss
-    
+
     def on_valid_test_stage_start(self, stage):
         # The on_stage_start method for the VALID and TEST stages.
         # This needs to be different because on the TRAIN stage we also use curriculum.
@@ -148,7 +167,9 @@ class ASR_Aku(BaseASR):
         # Set up statistics trackers for this stage
         # In this case, we would like to keep track of the word error rate (wer)
         # and the character error rate (cer)
-        if stage != sb.Stage.TRAIN or (self.sorting in getattr(self.train_set, 'METRIC_SORTERS', [])):
+        if stage != sb.Stage.TRAIN or (
+            self.sorting in getattr(self.train_set, "METRIC_SORTERS", [])
+        ):
             self.cer_metric = self.hparams.cer_computer()
             self.wer_metric = self.hparams.error_rate_computer()
 
@@ -193,8 +214,9 @@ class ASR_Aku(BaseASR):
 
             # Save the current checkpoint and delete previous checkpoints.
             self.checkpointer.save_and_keep_only(
-                meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
-                num_to_keep=getattr(self.hparams, "ckpts_to_keep", 1)
+                meta={"WER": stage_stats["WER"]},
+                min_keys=["WER"],
+                num_to_keep=getattr(self.hparams, "ckpts_to_keep", 1),
             )
 
         # We also write statistics about test data to stdout and to the logfile.
@@ -205,7 +227,7 @@ class ASR_Aku(BaseASR):
             )
             with open(self.hparams.wer_file, "w") as w:
                 self.wer_metric.write_stats(w)
-            if hasattr(self.hparams, 'cer_file'):
+            if hasattr(self.hparams, "cer_file"):
                 with open(self.hparams.cer_file, "w") as c:
                     self.cer_metric.write_stats(c)
 
@@ -213,12 +235,10 @@ class ASR_Aku(BaseASR):
         super().on_evaluate_start(max_key=max_key, min_key=min_key)
         if getattr(self.hparams, "avg_ckpts", 1) > 1:
             ckpts = self.checkpointer.find_checkpoints(
-                    max_key=max_key,
-                    min_key=min_key,
-                    max_num_checkpoints=self.hparams.avg_ckpts
+                max_key=max_key,
+                min_key=min_key,
+                max_num_checkpoints=self.hparams.avg_ckpts,
             )
-            model_state_dict = sb.utils.checkpoints.average_checkpoints(
-                    ckpts, "model" 
-            )
+            model_state_dict = sb.utils.checkpoints.average_checkpoints(ckpts, "model")
             self.hparams.model.load_state_dict(model_state_dict)
             self.checkpointer.save_checkpoint(name=f"AVERAGED-{self.hparams.avg_ckpts}")

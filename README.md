@@ -6,8 +6,10 @@
 [![License](https://img.shields.io/pypi/l/speechbrain-cl)][license]
 
 [![Read the documentation at https://speechbrain-cl.readthedocs.io/](https://img.shields.io/readthedocs/speechbrain-cl/latest.svg?label=Read%20the%20Docs)][read the docs]
+
 <!-- [![Tests](https://github.com/geoph9/speechbrain-cl/workflows/Tests/badge.svg)][tests] -->
 <!-- [![Codecov](https://codecov.io/gh/geoph9/speechbrain-cl/branch/main/graph/badge.svg)][codecov] -->
+
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)][pre-commit]
 [![Black](https://img.shields.io/badge/code%20style-black-000000.svg)][black]
 
@@ -15,8 +17,10 @@
 [status]: https://pypi.org/project/speechbrain-cl/
 [python version]: https://pypi.org/project/speechbrain-cl
 [read the docs]: https://speechbrain-cl.readthedocs.io/
+
 <!-- [tests]: https://github.com/geoph9/speechbrain-cl/actions?workflow=Tests -->
 <!-- [codecov]: https://app.codecov.io/gh/geoph9/speechbrain-cl -->
+
 [pre-commit]: https://github.com/pre-commit/pre-commit
 [black]: https://github.com/psf/black
 
@@ -26,7 +30,6 @@
 - Scoring functions: shown to improve performance (on the expense of training time).
 - Pacing functions: improve training time (while performance is on par with speechbrain's baseline).
 - Works as a library on top of `speechbrain`.
-
 
 ## Installation
 
@@ -46,7 +49,7 @@ If you are using poetry, then do `poetry add speechbrain-cl`.
 
 **This is not recommended unless you are sure you know what you are doing.**
 
-*Has only been tested on linux systems.*
+_Has only been tested on linux systems._
 
 ```bash
 # Clone repository
@@ -58,6 +61,7 @@ source ./env/bin/activate
 ```
 
 - **Option 1:** Non-editable mode
+
 ```bash
 # Install `build` and build the package
 python -m pip install build && python -m build
@@ -66,6 +70,7 @@ python -m pip install dist/cl-1.0a0-py2.py3-none-any.whl
 ```
 
 - **Option 2:** Editable mode:
+
 ```bash
 # Install package in editable mode
 # You first need to install `wheel` to avoid bdist_wheel errors.
@@ -77,9 +82,7 @@ python -m pip install -e .
 
 The installed package is called `cl` and it can be used both as library and a CLI tool. The CLI is primarily intended for analyzing the results of already trained models and may be buggy. Of course, they could still be useful and that's why the CLI options are documented.
 
-As a library, `cl` offers two main interfaces:
-    - `cl.train_utils.fit`: Use this to fit a model based on some hyperparameters.
-    - `cl.asr_models.ASR`: The default ASR model implementation. Assumes a CRDNN encoder and an RNN with attention as the decoder. If you want to use a different architecture then it is advised to base you code on this class.
+As a library, `cl` offers two main interfaces: - `cl.train_utils.fit`: Use this to fit a model based on some hyperparameters. - `cl.asr_models.ASR`: The default ASR model implementation. Assumes a CRDNN encoder and an RNN with attention as the decoder. If you want to use a different architecture then it is advised to base you code on this class.
 
 Check `examples/train.py` for an example of how to utilize them.
 
@@ -126,10 +129,9 @@ python -m pip install -e cl
 - **Transfer-fixed CL**: Same as above, except that the sortings never change (this is advised).
 - **Subsample CL**: Every `N` epochs (`N` is a hyperparameter) a provided percentage of the training set is sampled and used for training for the next `N` epochs. The order of the training set is determined by using either transfer CL or any of the standard methods.
 - **Subsample-incremental CL**: Same as above, but every `N` epochs we also increase the percentage of the training set that we are going to use for training.
-- **Noisy CL**: Can we used with any of the above methods (except *No sorting* and *Duration-based*). It separates the training set into three categories: easy, medium-level and hard examples (the distinction happens by usign the sortings provided from the methods above). It then procceeds to add some hard and medium-level examples among the easy ones. This has helped with overfitting issues.
+- **Noisy CL**: Can we used with any of the above methods (except _No sorting_ and _Duration-based_). It separates the training set into three categories: easy, medium-level and hard examples (the distinction happens by usign the sortings provided from the methods above). It then procceeds to add some hard and medium-level examples among the easy ones. This has helped with overfitting issues.
 
-NOTE: The *Subsample* methods refer to curriculum learning with a combination of a scoring and a pacing function. The latter controls the flow with which the model sees the available training data. Check the subsampling area of the example recipe for more details.
-
+NOTE: The _Subsample_ methods refer to curriculum learning with a combination of a scoring and a pacing function. The latter controls the flow with which the model sees the available training data. Check the subsampling area of the example recipe for more details.
 
 ## How to Use
 
@@ -159,7 +161,6 @@ Choosing a CL method:
 - Add the training option as part of the CLI (the `prepare_dataset` function should be taken as an argument).
 - Add tests.
 
-
 ## Contributing
 
 Contributions are very welcome.
@@ -176,6 +177,7 @@ If you encounter any problems,
 please [file an issue] along with a detailed description.
 
 Some well known issues:
+
 - For `numpy` to work you need to have BLAS/LAPACK (and probably fortran, too). To install them on Ubuntu, run: `sudo apt-get -y install liblapack-dev libblas-dev gfortran`.
 
 ## Credits

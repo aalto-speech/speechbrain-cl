@@ -1,9 +1,13 @@
 import collections
+
 import torch
-from speechbrain.dataio.batch import (
-    PaddedBatch, batch_pad_right, default_convert, PaddedData, 
-    mod_default_collate, recursive_pin_memory, recursive_to
-)
+from speechbrain.dataio.batch import PaddedBatch
+from speechbrain.dataio.batch import PaddedData
+from speechbrain.dataio.batch import batch_pad_right
+from speechbrain.dataio.batch import default_convert
+from speechbrain.dataio.batch import mod_default_collate
+from speechbrain.dataio.batch import recursive_pin_memory
+from speechbrain.dataio.batch import recursive_to
 
 
 VADData = collections.namedtuple("VADData", ["data"])
@@ -18,10 +22,11 @@ VADData = collections.namedtuple("VADData", ["data"])
 #         return batch_pad_right(values_with_segments, mode, value)
 #     return batch_pad_right(tensors, mode, value)
 
+
 class PaddedBatchVAD(PaddedBatch):
     # Worst OOP possible. TODO: Do the same without copy pasting everything from speechbrain's class.
     # The issue is that __<attr> attributes cannot be accessed since they will be given the name
-    # PaddedBatch__<attr> but instead we would expect the name PaddedBatchVAD__<attr> and so we 
+    # PaddedBatch__<attr> but instead we would expect the name PaddedBatchVAD__<attr> and so we
     # will get an AttributeError
     def __init__(
         self,
@@ -50,17 +55,21 @@ class PaddedBatchVAD(PaddedBatch):
                 self.__padded_keys.append(key)
                 padded = PaddedData(*padding_func(values, **padding_kwargs))
                 setattr(self, key, padded)
-            elif (padded_keys is None and isinstance(values[0], VADData)):
+            elif padded_keys is None and isinstance(values[0], VADData):
                 self.__padded_keys.append(key)
                 values_with_segments = []
                 # print("WE ARE HERE")
                 for batch in values:
                     for segment in batch.data:
-                        assert isinstance(segment, torch.Tensor), f"{segment=}\n{values=}"
+                        assert isinstance(
+                            segment, torch.Tensor
+                        ), f"{segment=}\n{values=}"
                         values_with_segments.append(segment.to(device))
                     # padded = PaddedData(*padding_func(batch.data.to(device), **padding_kwargs))
                     # setattr(self, key, padded)
-                padded = PaddedData(*padding_func(values_with_segments, **padding_kwargs))
+                padded = PaddedData(
+                    *padding_func(values_with_segments, **padding_kwargs)
+                )
                 # print("KEY:", key, "===== PADDED:", padded)
                 setattr(self, key, padded)
             else:
@@ -95,7 +104,7 @@ class PaddedBatchVAD(PaddedBatch):
         >>> ids
         ['ex1', 'ex2']
         """
-        return iter((getattr(self, key) for key in self.__keys))
+        return iter(getattr(self, key) for key in self.__keys)
 
     def pin_memory(self):
         """In-place, moves relevant elements to pinned memory."""

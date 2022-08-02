@@ -1,7 +1,7 @@
 # Usage
 
 ```{eval-rst}
-.. argparse:: 
+.. argparse::
     :ref: cl.cli_dispatcher.dispatch
     :prog: cl
 ```

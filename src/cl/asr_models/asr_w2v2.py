@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import logging
+
 import speechbrain as sb
+
 from cl.asr_models.asr_base import ASR_Old
 
 
 logger = logging.getLogger(__name__)
+
 
 class AsrWav2Vec2(ASR_Old):
     def compute_forward(self, batch, stage):
@@ -76,12 +79,17 @@ class AsrWav2Vec2(ASR_Old):
                 self.wav2vec_optimizer, new_lr_wav2vec
             )
             self.hparams.train_logger.log_stats(
-                stats_meta={"epoch": epoch, "lr": old_lr, "lr_wav2vec": old_lr_wav2vec,},
+                stats_meta={
+                    "epoch": epoch,
+                    "lr": old_lr,
+                    "lr_wav2vec": old_lr_wav2vec,
+                },
                 train_stats=self.train_stats,
                 valid_stats=stage_stats,
             )
             self.checkpointer.save_and_keep_only(
-                meta={"WER": stage_stats["WER"]}, min_keys=["WER"],
+                meta={"WER": stage_stats["WER"]},
+                min_keys=["WER"],
             )
         elif stage == sb.Stage.TEST:
             self.hparams.train_logger.log_stats(
@@ -90,7 +98,7 @@ class AsrWav2Vec2(ASR_Old):
             )
             with open(self.hparams.wer_file, "w") as w:
                 self.wer_metric.write_stats(w)
-            if hasattr(self.hparams, 'cer_file'):
+            if hasattr(self.hparams, "cer_file"):
                 with open(self.hparams.cer_file, "w") as c:
                     self.cer_metric.write_stats(c)
 
@@ -99,13 +107,8 @@ class AsrWav2Vec2(ASR_Old):
         self.wav2vec_optimizer = self.hparams.wav2vec_opt_class(
             self.modules.wav2vec2.parameters()
         )
-        self.optimizer = self.hparams.opt_class(
-            self.hparams.model.parameters()
-        )
+        self.optimizer = self.hparams.opt_class(self.hparams.model.parameters())
 
         if self.checkpointer is not None:
-            self.checkpointer.add_recoverable(
-                "wav2vec_opt", self.wav2vec_optimizer
-            )
+            self.checkpointer.add_recoverable("wav2vec_opt", self.wav2vec_optimizer)
             self.checkpointer.add_recoverable("modelopt", self.optimizer)
-

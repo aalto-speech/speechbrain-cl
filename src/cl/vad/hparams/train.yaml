@@ -21,13 +21,14 @@ save_folder: !ref <output_folder>/save
 train_log: !ref <output_folder>/train_log.txt
 
 # main data
-data_folder: !PLACEHOLDER
+data_folder: !PLACEHOLDER # Additional data (for augmentation)
 
-# Additional data (for augmentation)
 open_rir_folder: !ref <data_folder> # where to store noisy +ris from open_rir
-musan_folder: !PLACEHOLDER  # e.g, /path/to/musan (download it from the web before)
+musan_folder: !PLACEHOLDER
+  # e.g, /path/to/musan (download it from the web before)
 
-# Manifest files (created by the data preparation)
+  # Manifest files (created by the data preparation)
+
 annotation_train: !ref <save_folder>/train.json
 annotation_valid: !ref <save_folder>/valid.json
 annotation_test: !ref <save_folder>/test.json
@@ -46,11 +47,11 @@ example_length: 5 # in seconds
 sample_rate: 16000
 time_resolution: 0.01 # in seconds
 train_dataloader_opts:
-    batch_size: !ref <batch_size>
+  batch_size: !ref <batch_size>
 valid_dataloader_opts:
-    batch_size: !ref <batch_size>
+  batch_size: !ref <batch_size>
 test_dataloader_opts:
-    batch_size: !ref <batch_size>
+  batch_size: !ref <batch_size>
 
 # Feature parameters
 n_fft: 400
@@ -69,128 +70,125 @@ dnn_blocks: 1
 dnn_neurons: 16
 output_neurons: 1
 
-
 # Data augmentation
 add_noise: !new:speechbrain.lobes.augment.EnvCorrupt
-    openrir_folder: !ref <open_rir_folder>
-    babble_prob: 0.0
-    reverb_prob: 0.0
-    noise_prob: 1.0
-    noise_snr_low: -5
-    noise_snr_high: -15
+  openrir_folder: !ref <open_rir_folder>
+  babble_prob: 0.0
+  reverb_prob: 0.0
+  noise_prob: 1.0
+  noise_snr_low: -5
+  noise_snr_high: -15
 
 noise_corruption: !new:speechbrain.lobes.augment.EnvCorrupt
-    openrir_folder: !ref <open_rir_folder>
-    babble_prob: 0.0
-    reverb_prob: 0.0
-    noise_prob: 1.0
-    noise_snr_low: 5
-    noise_snr_high: 15
+  openrir_folder: !ref <open_rir_folder>
+  babble_prob: 0.0
+  reverb_prob: 0.0
+  noise_prob: 1.0
+  noise_snr_low: 5
+  noise_snr_high: 15
 
 add_noise_musan: !new:speechbrain.lobes.augment.EnvCorrupt
-    noise_csv: !ref <noise_csv>
-    babble_prob: 0.0
-    reverb_prob: 0.0
-    noise_prob: 1.0
-    noise_snr_low: -15
-    noise_snr_high: -20
+  noise_csv: !ref <noise_csv>
+  babble_prob: 0.0
+  reverb_prob: 0.0
+  noise_prob: 1.0
+  noise_snr_low: -15
+  noise_snr_high: -20
 
 add_music_musan: !new:speechbrain.lobes.augment.EnvCorrupt
-    noise_csv: !ref <music_csv>
-    babble_prob: 0.0
-    reverb_prob: 0.0
-    noise_prob: 1.0
-    noise_snr_low: -15
-    noise_snr_high: -20
+  noise_csv: !ref <music_csv>
+  babble_prob: 0.0
+  reverb_prob: 0.0
+  noise_prob: 1.0
+  noise_snr_low: -15
+  noise_snr_high: -20
 
 add_speech_musan: !new:speechbrain.lobes.augment.EnvCorrupt
-    noise_csv: !ref <speech_csv>
-    babble_prob: 0.0
-    reverb_prob: 0.0
-    noise_prob: 1.0
-    noise_snr_low: -15
-    noise_snr_high: -20
+  noise_csv: !ref <speech_csv>
+  babble_prob: 0.0
+  reverb_prob: 0.0
+  noise_prob: 1.0
+  noise_snr_low: -15
+  noise_snr_high: -20
 
 add_speech_multilang: !new:speechbrain.lobes.augment.EnvCorrupt
-    noise_csv: !ref <multilang_speech_csv>
-    babble_prob: 0.0
-    reverb_prob: 0.0
-    noise_prob: 1.0
-    noise_snr_low: -15
-    noise_snr_high: -20
-
+  noise_csv: !ref <multilang_speech_csv>
+  babble_prob: 0.0
+  reverb_prob: 0.0
+  noise_prob: 1.0
+  noise_snr_low: -15
+  noise_snr_high: -20
 
 # Models
 compute_features: !new:speechbrain.lobes.features.Fbank
-    sample_rate: !ref <sample_rate>
-    n_fft: !ref <n_fft>
-    n_mels: !ref <n_mels>
-    hop_length: !ref <time_resolution> * 1000 # in ms
+  sample_rate: !ref <sample_rate>
+  n_fft: !ref <n_fft>
+  n_mels: !ref <n_mels>
+  hop_length: !ref <time_resolution> * 1000 # in ms
 
 mean_var_norm: !new:speechbrain.processing.features.InputNormalization
-    norm_type: sentence
+  norm_type: sentence
 
 cnn: !new:speechbrain.nnet.containers.Sequential
-    input_shape: [null, null, !ref <n_mels>]
-    norm1: !name:speechbrain.nnet.normalization.LayerNorm
-    cnn1: !name:speechbrain.lobes.models.CRDNN.CNN_Block
-        channels: 16
-        kernel_size: (3, 3)
-    cnn2: !name:speechbrain.lobes.models.CRDNN.CNN_Block
-        channels: 32
-        kernel_size: (3, 3)
+  input_shape: [null, null, !ref <n_mels>]
+  norm1: !name:speechbrain.nnet.normalization.LayerNorm
+  cnn1: !name:speechbrain.lobes.models.CRDNN.CNN_Block
+    channels: 16
+    kernel_size: (3, 3)
+  cnn2: !name:speechbrain.lobes.models.CRDNN.CNN_Block
+    channels: 32
+    kernel_size: (3, 3)
 
 rnn: !new:speechbrain.nnet.RNN.GRU
-    input_shape: [null, null, 320]
-    hidden_size: !ref <rnn_neurons>
-    num_layers: !ref <rnn_layers>
-    bidirectional: True
+  input_shape: [null, null, 320]
+  hidden_size: !ref <rnn_neurons>
+  num_layers: !ref <rnn_layers>
+  bidirectional: True
 
 dnn: !new:speechbrain.nnet.containers.Sequential
-    input_shape: [null, null, !ref <rnn_neurons> * 2]
-    dnn1: !name:speechbrain.lobes.models.CRDNN.DNN_Block
-        neurons: !ref <dnn_neurons>
-    dnn2: !name:speechbrain.lobes.models.CRDNN.DNN_Block
-        neurons: !ref <dnn_neurons>
-    lin: !name:speechbrain.nnet.linear.Linear
-        n_neurons: !ref <output_neurons>
-        bias: False
-
+  input_shape: [null, null, !ref <rnn_neurons> * 2]
+  dnn1: !name:speechbrain.lobes.models.CRDNN.DNN_Block
+    neurons: !ref <dnn_neurons>
+  dnn2: !name:speechbrain.lobes.models.CRDNN.DNN_Block
+    neurons: !ref <dnn_neurons>
+  lin: !name:speechbrain.nnet.linear.Linear
+    n_neurons: !ref <output_neurons>
+    bias: False
 
 model: !new:torch.nn.ModuleList
-    - [!ref <cnn>, !ref <rnn>, !ref <dnn>]
+  - [!ref <cnn>, !ref <rnn>, !ref <dnn>]
 
 modules:
-    model: !ref <model>
-    cnn: !ref <cnn>
-    rnn: !ref <rnn>
-    dnn: !ref <dnn>
-    mean_var_norm: !ref <mean_var_norm>
+  model: !ref <model>
+  cnn: !ref <cnn>
+  rnn: !ref <rnn>
+  dnn: !ref <dnn>
+  mean_var_norm: !ref <mean_var_norm>
 
 opt_class: !name:torch.optim.Adadelta
-    lr: !ref <lr>
-    rho: 0.95
-    eps: 1.e-8
+  lr: !ref <lr>
+  rho: 0.95
+  eps: 1.e-8
 
 epoch_counter: !new:speechbrain.utils.epoch_loop.EpochCounter
-    limit: !ref <N_epochs>
+  limit: !ref <N_epochs>
 
 lr_annealing: !new:speechbrain.nnet.schedulers.LinearScheduler
-    initial_value: !ref <lr>
-    final_value: !ref <lr_final>
-    epoch_count: !ref <N_epochs>
+  initial_value: !ref <lr>
+  final_value: !ref <lr_final>
+  epoch_count: !ref <N_epochs>
 
 checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
-    checkpoints_dir: !ref <save_folder>
-    recoverables:
-        model: !ref <model>
-        normalizer: !ref <mean_var_norm>
-        counter: !ref <epoch_counter>
+  checkpoints_dir: !ref <save_folder>
+  recoverables:
+    model: !ref <model>
+    normalizer: !ref <mean_var_norm>
+    counter: !ref <epoch_counter>
 
 compute_BCE_cost: !name:speechbrain.nnet.losses.bce_loss
 
 train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
-    save_file: !ref <train_log>
+  save_file: !ref <train_log>
 
 train_stats: !name:speechbrain.utils.metric_stats.BinaryMetricStats
 test_stats: !name:speechbrain.utils.metric_stats.BinaryMetricStats

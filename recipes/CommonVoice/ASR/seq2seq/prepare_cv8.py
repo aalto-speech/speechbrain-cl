@@ -8,17 +8,23 @@ Adapted from:
  * Mirco Ravanelli, Ju-Chieh Chou, Loren Lugosch 2020
 """
 
-import os
 import csv
-import random
 import logging
-from typing import List, Optional
-from shutil import copy
+import os
+import random
 import statistics
+from shutil import copy
+from typing import List
+from typing import Optional
 
 import torchaudio
-from speechbrain.dataio.dataio import load_pkl, save_pkl
-from cl.utils.process_utils import normalize_text as _process_text, wccount
+from speechbrain.dataio.dataio import load_pkl
+from speechbrain.dataio.dataio import save_pkl
+
+from cl.utils.process_utils import normalize_text as _process_text
+from cl.utils.process_utils import wccount
+
+
 try:
     from tqdm import tqdm
 except ImportError:
@@ -27,12 +33,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 OPT_FILE = "opt_cv_en_prepare.pkl"
 
+
 def prepare_cv8(
     data_folder: str,
     save_folder: str,
     skip_prep: bool = False,
-    min_duration_secs: float = 1.,  # 1 second
-    max_duration_secs: float = 9.,  # 9 seconds
+    min_duration_secs: float = 1.0,  # 1 second
+    max_duration_secs: float = 9.0,  # 9 seconds
     train_dir: str = "train",
     dev_dir: str = "dev",
     test_dir: str = "test",
@@ -42,7 +49,7 @@ def prepare_cv8(
 ):
     """
     Prepares the csv files for the Mozilla Common Voice dataset (v8).
-    
+
     Arguments
     ---------
     data_folder : str
@@ -60,7 +67,7 @@ def prepare_cv8(
         Maximum duration of each audio chunk. Large audio chunks may result in errors.
     remove_special_tokens: bool
         Default: False
-        Defines whether the special tokens of the form .br, .fr etc will be used for 
+        Defines whether the special tokens of the form .br, .fr etc will be used for
         training or not.
     train_dir: str
         Default: train
@@ -88,11 +95,11 @@ def prepare_cv8(
     if skip_prep:
         return
     splits = [train_dir, dev_dir, test_dir]
-    
+
     conf = {
-        'splits': ",".join(splits),
-        'min_duration_secs': min_duration_secs,
-        'max_duration_secs': max_duration_secs,
+        "splits": ",".join(splits),
+        "min_duration_secs": min_duration_secs,
+        "max_duration_secs": max_duration_secs,
     }
 
     # Saving folder
@@ -114,41 +121,43 @@ def prepare_cv8(
     # create csv files for each split
     # In case the train_csv has already been provided, we don't need to create it.
     if train_csv is not None and os.path.isfile(train_csv):
-        logger.warning(f"{'='*80}\nWill copy a pre-created <train>.csv file (possibly a subset?).\n{'='*80}")
+        logger.warning(
+            f"{'='*80}\nWill copy a pre-created <train>.csv file (possibly a subset?).\n{'='*80}"
+        )
         copy(train_csv, os.path.join(save_folder, f"{splits[0]}.csv"))
-    
+
     for split in splits:
-        logger.info("=============== Processing {} split. ===============".format(split))
+        logger.info(
+            f"=============== Processing {split} split. ==============="
+        )
         # Read as tsv but save as csv
         create_csv(
-            orig_tsv_file=os.path.join(data_folder, f"{split}.tsv"), 
+            orig_tsv_file=os.path.join(data_folder, f"{split}.tsv"),
             output_csv_file=os.path.join(save_folder, f"{split}.csv"),
             clips_folder=os.path.join(data_folder, "clips"),
             min_duration_secs=min_duration_secs,
             max_duration_secs=max_duration_secs,
             ignore_if_already_exists=not recalculate_csvs_if_exist,
         )
-        logger.info("="*60)
-    
+        logger.info("=" * 60)
+
     # In case we need to create a fixed subset
     if train_sample_perc is not None:
         train_csv = os.path.join(save_folder, f"{splits[0]}.csv")
         sample_subset(
-            csv_path=train_csv, 
-            sample_perc=train_sample_perc, 
-            out_path=train_csv
+            csv_path=train_csv, sample_perc=train_sample_perc, out_path=train_csv
         )
     # saving options
     save_pkl(conf, save_opt)
 
 
 def create_csv(
-    orig_tsv_file: str, 
+    orig_tsv_file: str,
     output_csv_file: str,
     clips_folder: str,
-    min_duration_secs: float = 1.,
-    max_duration_secs: float = 9.,
-    ignore_if_already_exists: bool = True
+    min_duration_secs: float = 1.0,
+    max_duration_secs: float = 9.0,
+    ignore_if_already_exists: bool = True,
 ):
     """
     Creates the csv file given a list of wav files.
@@ -198,7 +207,7 @@ def create_csv(
         csv_writer.writerow(header_row)
         nb_samples = wccount(orig_tsv_file)
 
-        with open(orig_tsv_file, "r") as tsv_fr:
+        with open(orig_tsv_file) as tsv_fr:
             _ = next(tsv_fr)  # first line is the header
 
             # Adding some prints
@@ -232,15 +241,15 @@ def create_csv(
                 # Remove too short sentences (or empty):
                 if len(sentence) < 3:
                     continue
-                
-                start = str(0.)
+
+                start = str(0.0)
                 stop = str(duration)
                 wrd = _process_text(sentence).strip()
                 # Composition of the csv_line (the speaker id is the same as the utt id.)
                 #           <UTT>  <START> <END>  <DURATION>     <WAV>    <SPK>  <WORDS>
                 csv_line = [utt_id, start, stop, str(duration), mp3_path, spk_id, wrd]
                 # Ignore rows that contain NaN values
-                if any(i!=i for i in csv_line) or len(wrd)==0:
+                if any(i != i for i in csv_line) or len(wrd) == 0:
                     num_nan_files += 1
                     continue
                 # Adding this line to the csv_lines list
@@ -251,15 +260,23 @@ def create_csv(
     total_duration = sum(durations)
     logger.info(f"{output_csv_file} successfully created!")
     logger.info(f"Found {len(segments)} `segments` of CV8.")
-    if len(segments)>0:
-        logger.info(f"They probably need special handling. The first segment was: {segments[:1]}.")
+    if len(segments) > 0:
+        logger.info(
+            f"They probably need special handling. The first segment was: {segments[:1]}."
+        )
     logger.info(f"Number of samples: {number_of_audios}.")
     logger.info(f"Total duration: {round(total_duration / 3600, 2)} hours.")
-    logger.info(f"Median/Mean duration: {round(statistics.median(durations), 2)}/{round(total_duration/len(durations), 2)}.")
-    logger.info(f"Ignored {num_ignored} audio files in total (due to duration issues) out of {number_of_audios+num_ignored}.")
+    logger.info(
+        f"Median/Mean duration: {round(statistics.median(durations), 2)}/{round(total_duration/len(durations), 2)}."
+    )
+    logger.info(
+        f"Ignored {num_ignored} audio files in total (due to duration issues) out of {number_of_audios+num_ignored}."
+    )
     if num_nan_files > 0:
         logger.info(f"Ignored {num_nan_files} utterances due to nan value issues.")
-    logger.info(f"Total duration of ignored files {round(ignored_duration / 60, 2)} minutes.")
+    logger.info(
+        f"Total duration of ignored files {round(ignored_duration / 60, 2)} minutes."
+    )
 
 
 def skip(splits: List[str], save_folder: str, conf: dict) -> bool:
@@ -304,17 +321,18 @@ def skip(splits: List[str], save_folder: str, conf: dict) -> bool:
 
     return skip
 
+
 def sample_subset(csv_path: str, sample_perc: float, out_path: str):
     assert os.path.isfile(csv_path), f"{csv_path=}"
     assert isinstance(sample_perc, float) and 0 < sample_perc < 1, f"{sample_perc=}"
     new_csv_lines = []
-    with open(csv_path, 'r') as f:
+    with open(csv_path) as f:
         header = f.__next__()
         new_csv_lines.append(header)
         lines = f.readlines()
         random.shuffle(lines)
-    new_csv_lines += lines[:int(sample_perc*len(lines))]
-    with open(out_path, 'w') as fw:
+    new_csv_lines += lines[: int(sample_perc * len(lines))]
+    with open(out_path, "w") as fw:
         fw.writelines(new_csv_lines)
 
 
@@ -334,6 +352,7 @@ def _check_cv_v8_folders(data_folder: str, splits: List[str]):
     FileNotFoundError
         If data folder doesn't contain the desired dataset.
     """
+
     def check_file_exists(f, *args):
         if len(args) != 0:
             f = os.path.join(f, *args)
@@ -343,6 +362,7 @@ def _check_cv_v8_folders(data_folder: str, splits: List[str]):
                 "common-voice english dataset (version 1)." % f
             )
             raise FileNotFoundError(err_msg)
+
     check_file_exists(os.path.join(data_folder, "clips"))
     # Checking if all the splits exist
     for split in splits:

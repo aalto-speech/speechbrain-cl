@@ -34,7 +34,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters  
+set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 
 ref="$1"
 shift
