@@ -1,10 +1,12 @@
 import ast
+from collections import defaultdict
 import glob
 from typing import List, Callable, Optional, Union, Collection
 import os
 import re
 import logging
 import numpy as np
+import pandas as pd
 from speechbrain.dataio.dataset import DynamicItemDataset
 import torch
 import subprocess
@@ -226,6 +228,52 @@ def normalize_dict(d: dict, norm_func=min_max_normalize):
 def strip_spaces(s: str):
     return re.sub(r"\s+", " ", s)
 
+def order_variability(log_dir: str, by: str = "rank"):
+    """ Calculate the variability of the orderings as they are updated.
+        E.g. Do the orderings converge after a certain number of updates?
+        Args:
+            log_dir: Directory containing .log files with the curriculum
+                     orderings.
+        Returns:
+            diffs_mat: A matrix containing the differences across pairs of
+                       back-to-back ordering dictionaries.
+                       This matrix will have the same number of rows and one 
+                       column less than the original matrix which has data
+                       points as its rows and the epochs as its columns.
+    """
+    files = glob.glob(os.path.join(log_dir, "*.log"))
+    n_epochs = len(files)
+    if n_epochs == 0:
+        raise ValueError(f"Empty directory located under {log_dir}.")
+    n_datapoints = wccount(files[0]) + 1
+    if by == "rank":
+        ranks_per_utt = defaultdict(list)
+        for i, logfile in enumerate(files):
+            sorting_dict = load_sorting_dictionary(logfile)
+            # Normalize scores (so that they don't contain the duration) and sort based on scores
+            for rank, (k, v) in enumerate(sorted(normalize_only_durs(sorting_dict).items(), key=lambda x: x[1])):
+                ranks_per_utt[k].append(rank)
+        rank_diffs = defaultdict(list)
+        for k in ranks_per_utt.keys():
+            for i in range(n_epochs-1):
+                rank_diffs[k].append(abs(ranks_per_utt[k][i] - ranks_per_utt[k][i+1]))
+        rank_diffs = pd.DataFrame(rank_diffs)
+        return rank_diffs
+    scores_per_epoch = np.empty((n_datapoints, n_epochs))
+    for i, logfile in enumerate(files):
+        sorting_dict = load_sorting_dictionary(logfile)
+        # Normalize scores (so that they don't contain the duration)
+        sorting_dict = normalize_only_durs(sorting_dict)
+        # sort dictionary based on keys and extract only the scores
+        # note: we use v[0] since v originally contains (value, duration).
+        scores = [v[0] for _, v in sorted(sorting_dict.items(), key=lambda x: x[0])]
+        scores_per_epoch[:, i] = scores
+    score_diffs = np.empty((n_datapoints, n_epochs-1))
+    # iterate pairs of columns
+    for i, (c1, c2) in enumerate(zip(scores_per_epoch.T[:-1], scores_per_epoch.T[1:])):
+        score_diffs[:, i] = c1-c2
+    return score_diffs
+
 # Credits: https://github.com/geoph9/rust-wer/blob/master/python-equivalent/wer.py
 def cer_minimal(h: Collection[Union[int, str]], r: Collection[Union[int, str]]) -> float:
     """ Calculation of Levenshtein distance.
@@ -306,8 +354,13 @@ def filelist_to_text_gen(filelist_path: str, remove_special_tokens: bool = False
                 yield '\n'.join([txt for txt in proc_txt if txt not in ['', '\n']])
 
 def wccount(filename):
-    out = subprocess.Popen(['wc', '-l', filename],
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT
-                         ).communicate()[0]
-    return int(out.partition(b' ')[0])
+    try:
+        out = subprocess.Popen(['wc', '-l', filename],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT
+                            ).communicate()[0]
+        return int(out.partition(b' ')[0])
+    except:
+        with open(filename) as f:
+            num_lines = sum(1 for line in f)
+        return num_lines
