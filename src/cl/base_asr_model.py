@@ -225,6 +225,14 @@ class BaseASR(sb.core.Brain, ABC):
             self.current_epoch <= getattr(self.hparams, "default_sorting_epochs", 1)
         ) and (self.sorting in CurriculumDataset.CURRICULUM_KEYS)
 
+    @property
+    def start_cl_epoch(self):
+        return getattr(self.hparams, "start_cl_epoch", 0)
+    
+    @property
+    def end_cl_epoch(self):
+        return getattr(self.hparams, "end_cl_epoch", self.hparams.number_of_epochs)
+
     # Abstract methods MUST be implemented by the user.
     @abstractmethod
     def compute_forward(self, batch, stage):
@@ -345,6 +353,12 @@ class BaseASR(sb.core.Brain, ABC):
         # ###################### CASE 1: No CL #######################
         # ############################################################
         if self.sorting in ["no", False, ""]:
+            return  # no sorting needs be done
+
+        # ############################################################
+        # ############## CASE 1b: A non-sorting epoch ################
+        # ############################################################
+        if not (self.start_cl_epoch <= self.current_epoch <= self.end_cl_epoch):
             return  # no sorting needs be done
 
         # ############################################################
