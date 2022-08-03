@@ -42,7 +42,7 @@ def process_unified_file(filename, metric="MP"):
         ]
         mnames = list(map(_hyp_path_to_mname, mnames))
         contents = [l for l in contents if metric in l][1:]
-        contents = [re.sub(fr"\|\s+{metric}\s+\|", "", l) for l in contents]
+        contents = [re.sub(rf"\|\s+{metric}\s+\|", "", l) for l in contents]
         contents = [
             [inner.strip() for inner in c.split("|") if len(inner.strip()) > 0]
             for c in contents

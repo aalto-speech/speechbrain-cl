@@ -228,7 +228,7 @@ class BaseASR(sb.core.Brain, ABC):
     @property
     def start_cl_epoch(self):
         return getattr(self.hparams, "start_cl_epoch", 0)
-    
+
     @property
     def end_cl_epoch(self):
         return getattr(self.hparams, "end_cl_epoch", self.hparams.number_of_epochs)
@@ -359,6 +359,9 @@ class BaseASR(sb.core.Brain, ABC):
         # ############## CASE 1b: A non-sorting epoch ################
         # ############################################################
         if not (self.start_cl_epoch <= self.current_epoch <= self.end_cl_epoch):
+            logger.info(
+                f"Ignoring sorting since {self.start_cl_epoch=} and {self.end_cl_epoch=} while current epoch is {self.current_epoch}."
+            )
             return  # no sorting needs be done
 
         # ############################################################

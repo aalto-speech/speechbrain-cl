@@ -15,20 +15,23 @@ targets and sub-word units estimated with Byte Pairwise Encoding (BPE).
 
 The experiment file is flexible enough to support a large variety of
 different systems. By properly changing the parameter files, you can try
-different encoders, decoders, tokens (e.g, characters instead of BPE) 
+different encoders, decoders, tokens (e.g, characters instead of BPE)
 and many other possible variations.
 
 Authors
  * Georgios Karakasidis 2021
 """
 
-import sys
 import logging
+import sys
+
 import speechbrain as sb
 from hyperpyyaml import load_hyperpyyaml
 from speechbrain.utils.distributed import run_on_main
+
+from cl.asr_models import ASR
+from cl.asr_models import AsrWav2Vec2
 from cl.train_utils import fit
-from cl.asr_models import ASR, AsrWav2Vec2
 
 
 logger = logging.getLogger(__name__)
@@ -56,7 +59,7 @@ if __name__ == "__main__":
         experiment_directory=hparams["output_folder"],
         hyperparams_to_save=hparams_file,
         overrides=overrides,
-    )        
+    )
 
     # Due to DDP, we do the preparation ONLY on the main python process
     run_on_main(
@@ -77,8 +80,6 @@ if __name__ == "__main__":
     )
 
     ASR_Model = ASR
-    if hparams.get('use_wav2vec2', False) is True:
+    if hparams.get("use_wav2vec2", False) is True:
         ASR_Model = AsrWav2Vec2  # Warning: Untested
-    fit(
-        hparams, run_opts, overrides, ASR_Model=ASR_Model
-    )
+    fit(hparams, run_opts, overrides, ASR_Model=ASR_Model)

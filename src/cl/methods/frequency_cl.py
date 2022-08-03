@@ -241,9 +241,7 @@ class FrequencyCL(CurriculumDataset):
                 self.precomputed_freqs = Counter(tokens)
             for item in dataset_trans:
                 tokens = tokenize(item["wrd"])
-                easyness = sum(self.precomputed_freqs[w] for w in tokens) / len(
-                    tokens
-                )
+                easyness = sum(self.precomputed_freqs[w] for w in tokens) / len(tokens)
                 reverse_sorting_dict[item["id"]] = easyness
         return reverse_sorting_dict
 

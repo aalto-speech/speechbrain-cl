@@ -13,8 +13,8 @@ jobs:
       matrix:
         include:
           - { python: "3.9", os: "ubuntu-latest", session: "pre-commit" }
-          - { python: "3.9", os: "ubuntu-latest", session: "mypy" }
-          - { python: "3.8", os: "ubuntu-latest", session: "mypy" }
+          # - { python: "3.9", os: "ubuntu-latest", session: "mypy" }
+          # - { python: "3.8", os: "ubuntu-latest", session: "mypy" }
           - { python: "3.9", os: "ubuntu-latest", session: "tests" }
           - { python: "3.8", os: "ubuntu-latest", session: "tests" }
           # - { python: "3.9", os: "windows-latest", session: "tests" }

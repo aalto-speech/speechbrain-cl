@@ -63,9 +63,7 @@ def _read_stats(paths, metrics=DEFAULT_METRICS, return_test_results=False):
             c[-max_epoch_num:] for c, max_epoch_num in zip(contents, max_epochs)
         ]
         epochs = get_epoch_numbers()
-        assert len({len(e) for e in epochs}) == 1, list(
-            {len(e) for e in epochs}
-        )
+        assert len({len(e) for e in epochs}) == 1, list({len(e) for e in epochs})
     epochs = list(zip(*epochs))
     if len(epochs) == 0:
         raise ValueError(

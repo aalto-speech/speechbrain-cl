@@ -44,9 +44,7 @@ def main(res_dir, metrics=DEFAULT_METRICS):
         try:
             out = _read_stats([log], metrics, return_test_results=True)
         except NoEpochsTrained:
-            print(
-                f"Model: {model_name} (seed={seed})\n\tNo epochs trained :("
-            )
+            print(f"Model: {model_name} (seed={seed})\n\tNo epochs trained :(")
             continue
         if len(out) == 5 and len(out[-1]) > 0:
             # We only provide one log so the length of the test_results var is always 1.

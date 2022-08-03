@@ -30,7 +30,7 @@ from .utils.significance_tests import _get_parser as get_sign_test_parser
 from .utils.significance_tests import _parse_args as parse_sign_test_args
 
 
-def dispatch(predefined_args = None):
+def dispatch(predefined_args=None):
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers()
 

@@ -308,9 +308,7 @@ def order_variability(log_dir: str, by: str = "rank"):
 
 
 # Credits: https://github.com/geoph9/rust-wer/blob/master/python-equivalent/wer.py
-def cer_minimal(
-    h: List[Union[int, str]], r: List[Union[int, str]]
-) -> float:
+def cer_minimal(h: List[Union[int, str]], r: List[Union[int, str]]) -> float:
     """Calculation of Levenshtein distance.
     Works only for iterables up to 254 elements (uint8).
     O(nm) time and space complexity.

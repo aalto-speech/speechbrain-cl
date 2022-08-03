@@ -3,6 +3,7 @@ import pytest
 
 from cl import cli_dispatcher
 
+
 @pytest.mark.parametrize("option", ("-h", "--help"))
 def test_help_succeeds(capsys, option) -> None:
     """It exits with a status code of zero."""

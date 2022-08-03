@@ -23,11 +23,13 @@ train_log: !ref <output_folder>/train_log.txt
 # main data
 data_folder: !PLACEHOLDER # Additional data (for augmentation)
 
+
 open_rir_folder: !ref <data_folder> # where to store noisy +ris from open_rir
 musan_folder: !PLACEHOLDER
   # e.g, /path/to/musan (download it from the web before)
 
   # Manifest files (created by the data preparation)
+
 
 annotation_train: !ref <save_folder>/train.json
 annotation_valid: !ref <save_folder>/valid.json

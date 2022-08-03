@@ -127,9 +127,7 @@ def prepare_cv8(
         copy(train_csv, os.path.join(save_folder, f"{splits[0]}.csv"))
 
     for split in splits:
-        logger.info(
-            f"=============== Processing {split} split. ==============="
-        )
+        logger.info(f"=============== Processing {split} split. ===============")
         # Read as tsv but save as csv
         create_csv(
             orig_tsv_file=os.path.join(data_folder, f"{split}.tsv"),

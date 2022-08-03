@@ -85,9 +85,7 @@ class MetricCurriculum(BaseCurriculum):
     def __init__(
         self, sorting_method, brain, sorting_dict=None, keep_confs=False, **kwargs
     ):
-        super().__init__(
-            sorting_method, brain, sorting_dict, **kwargs
-        )
+        super().__init__(sorting_method, brain, sorting_dict, **kwargs)
         if self.sorting_method == "cer":
             # convert the sequence of words to a sequence of characters.
             # this way we will get CER instead of WER
@@ -158,9 +156,7 @@ class MetricCurriculum(BaseCurriculum):
 
 class LossCurriculum(BaseCurriculum):
     def __init__(self, sorting_method, brain, sorting_dict=None, **kwargs):
-        super().__init__(
-            sorting_method, brain, sorting_dict, **kwargs
-        )
+        super().__init__(sorting_method, brain, sorting_dict, **kwargs)
         try:
             self.method = getattr(brain, f"_compute_{self.sorting_method}")
         except AttributeError:

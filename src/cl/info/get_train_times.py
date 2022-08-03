@@ -333,9 +333,7 @@ def _get_iterator(log_txt_pattern):
         if len(iterator) == 0:
             raise Exception(f"Invalid log.txt pattern: {log_txt_pattern}")
     else:
-        raise Exception(
-            f"Neither a valid log file not a pattern: {log_txt_pattern}"
-        )
+        raise Exception(f"Neither a valid log file not a pattern: {log_txt_pattern}")
     return iterator
 
 
