@@ -44,6 +44,7 @@ coverage = {extras = ["toml"], version = ">=6.2"}
 darglint = ">=1.8.1"
 flake8 = "4.0.1"
 flake8-bandit = "2.1.2"
+bandit= "1.7.2"
 flake8-bugbear = "21.9.2"
 flake8-docstrings = "1.6.0"
 flake8-rst-docstrings = "0.2.5"

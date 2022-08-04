@@ -18,6 +18,7 @@ from speechbrain.dataio.dataloader import LoopedLoader
 from speechbrain.dataio.dataset import DynamicItemDataset
 from speechbrain.dataio.dataset import FilteredSortedDynamicItemDataset
 from speechbrain.utils.data_utils import undo_padding
+
 # from speechbrain.utils.distributed import run_on_main
 from speechbrain.utils.metric_stats import wer_details_for_batch
 from torch.utils.data.dataloader import DataLoader
@@ -53,6 +54,7 @@ YamlTupleSafeLoader.add_constructor(
 # Define training procedure
 @sb.utils.checkpoints.register_checkpoint_hooks
 class BaseASR(sb.core.Brain, ABC):
+    """Speechbrain's Brain class adjusted to work with CL strategies."""
 
     DURATION_CL_KEYS = ["ascending", "descending"]
     VALID_CL_KEYS = (
@@ -133,7 +135,7 @@ class BaseASR(sb.core.Brain, ABC):
         #      1 minute long utterances, then using VAD will help you split in semgents and
         #      get a better performance.
         self.VAD = (
-            getattr(self.hparams, "VAD")
+            getattr(self.hparams, "VAD", None)
             if getattr(self.hparams, "use_vad", False) is True
             else None
         )
@@ -167,30 +169,37 @@ class BaseASR(sb.core.Brain, ABC):
 
     @property
     def do_subsample(self):
+        """whether or not to use SPFs"""
         return getattr(self.hparams, "do_subsample", False)
 
     @property
     def do_adaptive_pacing(self):
+        """whether or not to use VPFs"""
         return getattr(self.hparams, "do_adaptive_pacing", False)
 
     @property
     def reverse(self):
+        """reverse CL"""
         return getattr(self.hparams, "reverse", False)
 
     @property
-    def epochs_per_adaptive_group(self):
+    def epochs_per_adaptive_group(self) -> int:
+        """In VPFs, how many epochs should each subset be used for?"""
         return getattr(self.hparams, "epochs_per_adaptive_group", 2) or 2
 
     @property
     def incremental_adaptive_pacing(self):
+        """whether or not VPFs should increase the train set size"""
         return getattr(self.hparams, "incremental_adaptive_pacing", True)
 
     @property
     def curriculum_update_every(self):
+        """how often should the CL orderings be updated?"""
         return getattr(self.hparams, "curriculum_update_every", 1) or 1
 
     @property
     def current_epoch(self):
+        """current training epoch"""
         return self.hparams.epoch_counter.current
 
     @current_epoch.setter
@@ -199,28 +208,33 @@ class BaseASR(sb.core.Brain, ABC):
 
     @property
     def current_trainset(self):
+        """helper attribute to distinguish between the normal train set and SPF subsets"""
         if self.do_subsample and hasattr(self, "train_subset"):
             return self.train_subset
         return self.train_set
 
     @property
     def use_transfer_cl(self):
+        """Transger cl"""
         return self.use_fixed_sorting or (
             getattr(self.hparams, "pretrained_model_hparams", None) is not None
         )
 
     @property
     def use_default_training(self):
+        """Refers to ascending duration-based ordering"""
         return (
             self.current_epoch <= getattr(self.hparams, "default_sorting_epochs", 1)
         ) and (self.sorting in CurriculumDataset.CURRICULUM_KEYS)
 
     @property
     def start_cl_epoch(self):
+        """When should the chosen CL method start being applied."""
         return getattr(self.hparams, "start_cl_epoch", 0)
 
     @property
     def end_cl_epoch(self):
+        """Until when should the chosen CL method be applied."""
         return getattr(self.hparams, "end_cl_epoch", self.hparams.number_of_epochs)
 
     # Abstract methods MUST be implemented by the user.
@@ -236,9 +250,10 @@ class BaseASR(sb.core.Brain, ABC):
 
     @abstractmethod
     def on_valid_test_stage_start(self, stage):
-        # The on_stage_start method for the VALID and TEST stages.
-        # This needs to be different because on the TRAIN stage we also use curriculum.
-        # An example implementation is to initialize the cer, wer computers.
+        """The on_stage_start method for the VALID and TEST stages.
+        This needs to be different because on the TRAIN stage we also use curriculum.
+        An example implementation is to initialize the cer, wer computers.
+        """
         return
 
     # def _fit_train(self, train_set, epoch, enable):
@@ -250,6 +265,7 @@ class BaseASR(sb.core.Brain, ABC):
     #     return o
 
     def make_random_dataloader(self):
+        """random sorting that stays fixed even if training restarts"""
         assert self.sorting == "random", self.sorting
         assert self.hparams.do_subsample is True
         self.hparams.dataloader_options["shuffle"] = self.train_loader_kwargs[
@@ -294,9 +310,9 @@ class BaseASR(sb.core.Brain, ABC):
 
         return loss.detach()
 
-    def evaluate_batch(self, batch, stage):
-        """Computations needed for validation/test batches"""
-        return super().evaluate_batch(batch, stage)
+    # def evaluate_batch(self, batch, stage):
+    #     """Computations needed for validation/test batches"""
+    #     return super().evaluate_batch(batch, stage)
 
     def on_fit_start(self):
         """Gets called at the beginning of ``fit()``, on multiple processes
@@ -333,7 +349,7 @@ class BaseASR(sb.core.Brain, ABC):
         # logger.info(f"On fit start. Type of train_set: {type(self.train_set)}.")
 
     @checkpoint_wrapper_cl
-    def on_stage_start(self, stage, epoch):
+    def on_stage_start(self, stage, epoch=None):
         """Gets called at the beginning of each epoch"""
         self.on_valid_test_stage_start(stage)
         if stage != sb.Stage.TRAIN:
@@ -344,7 +360,7 @@ class BaseASR(sb.core.Brain, ABC):
             train_set = self.train_set.filtered_sorted(
                 sort_key="duration",
                 reverse=reverse,
-                noise_percentage=0#getattr(self.hparams, "noisy_random_percentage", None),
+                noise_percentage=0,  # getattr(self.hparams, "noisy_random_percentage", None),
             )
             self.train_loader_kwargs["shuffle"] = False
             dataloader = self.make_dataloader(
@@ -364,7 +380,8 @@ class BaseASR(sb.core.Brain, ABC):
         # ############################################################
         if not (self.start_cl_epoch <= self.current_epoch <= self.end_cl_epoch):
             logger.info(
-                f"Ignoring sorting since {self.start_cl_epoch=} and {self.end_cl_epoch=} while current epoch is {self.current_epoch}."
+                f"Ignoring sorting since {self.start_cl_epoch=} and {self.end_cl_epoch=} \
+                    while current epoch is {self.current_epoch}."
             )
             if isinstance(self.train_set, DataLoader):
                 return
@@ -375,10 +392,7 @@ class BaseASR(sb.core.Brain, ABC):
         # ################### CASE 2: Random CL ######################
         # ############################################################
         if self.sorting == "random":
-            if not (
-                isinstance(self.train_set, DataLoader)
-                or isinstance(self.train_set, LoopedLoader)
-            ):
+            if not isinstance(self.train_set, (DataLoader, LoopedLoader)):
                 self.train_set = self.make_random_dataloader()
             # logger.info(f"On stage start: After random. Type of train_set: {type(self.train_set)}.")
             return self.train_set
@@ -460,7 +474,7 @@ class BaseASR(sb.core.Brain, ABC):
             if sub_dataloader is not None:  # it is a tuple at this point.
                 return sub_dataloader
             else:
-                msg = f"`do_subsample` is true but not used."
+                msg = "`do_subsample` is true but not used."
                 logger.warning(msg)
                 raise Exception(msg)
         if self.do_subsample:
@@ -1042,14 +1056,14 @@ class BaseASR(sb.core.Brain, ABC):
                             ),
                         )
                     )
-                except IndexError:
+                except IndexError as exc:
                     msg = f"Expected log file of the form /path/to/<prefix><cl-method>_dict-epoch=<epoch>.log \
                         but we couldn't split on the '=' and '.' symbols. The files we checked were: \
-                        {os.listdit(from_path)}."
-                    raise IndexError(msg)
-                except ValueError:
+                        {os.listdir(from_path)}."
+                    raise IndexError(msg) from exc
+                except ValueError as exc:
                     msg = f"Could not find a valid integer as the epoch number under: {os.listdir(from_path)}."
-                    raise ValueError(msg)
+                    raise ValueError(msg) from exc
             sorting_dict_log = os.path.join(
                 from_path,
                 f"{self.dict_log_prefix}{self.sorting}_dict-epoch={epoch}.log",
@@ -1090,7 +1104,7 @@ class BaseASR(sb.core.Brain, ABC):
         self.modules.eval()
         # Check progressbar config
         if progressbar is None:
-            progressbar = not self.noprogressbar
+            progressbar = not getattr(self, "noprogressbar", False)
         enable = progressbar and sb.utils.distributed.if_main_process()
         # Create dataloader for the training set (we don't care about order)
         if not (
@@ -1127,7 +1141,7 @@ class BaseASR(sb.core.Brain, ABC):
             for batch in t:
                 self.step += 1
                 out = self.compute_forward(batch, stage=sb.Stage.TRAIN)
-                loss = self.compute_loss(
+                self.compute_loss(
                     out,
                     batch,
                     stage=sb.Stage.TRAIN,
@@ -1136,7 +1150,9 @@ class BaseASR(sb.core.Brain, ABC):
                 )
 
                 # Debug mode only runs a few batches
-                if self.debug:  # and self.step == self.debug_batches:
+                if getattr(
+                    self, "debug", False
+                ):  # and self.step == self.debug_batches:
                     break
 
                 if (
@@ -1354,18 +1370,18 @@ class BaseASR(sb.core.Brain, ABC):
         details: List[dict] = wer_details_for_batch(
             batch.id, target_words, predicted_words, True
         )
-        for dp_id in range(len(batch.id)):
+        for dp_id, batch_id in enumerate(batch.id):
             dur = batch.duration[dp_id].cpu().item()
             value = get_value(
                 wer=round(details[dp_id]["WER"], 4),
                 conf=round(predictions["scores"][dp_id].cpu().item(), 4),
                 dur=dur,
             )
-            self._update_dict(batch.id[dp_id], value, dur)
+            self._update_dict(batch_id, value, dur)
         return loss
 
     def _loss_curriculum_update(
-        self, stage, batch, losses, predictions, sorting_method=None
+        self, stage, batch, losses, __predictions, sorting_method=None
     ):
         if stage != sb.Stage.TRAIN or self.current_epoch + 1 <= getattr(
             self.hparams, "default_sorting_epochs", 1
@@ -1378,10 +1394,10 @@ class BaseASR(sb.core.Brain, ABC):
             get_value = lambda dp_id, dur: (round(losses[dp_id].item(), 4), dur)
         else:
             get_value = lambda dp_id, dur: round(losses[dp_id].item(), 4)
-        for dp_id in range(len(batch.id)):
+        for dp_id, batch_id in enumerate(batch.id):
             # Either in the format (loss_value, duration) or simply (loss_value)
             dur = batch.duration[dp_id].cpu().item()
-            self._update_dict(batch.id[dp_id], get_value(dp_id, dur), dur)
+            self._update_dict(batch_id, get_value(dp_id, dur), dur)
         return self._mean_redact(losses, batch)
 
     def _compute_seq_loss(
@@ -1414,7 +1430,7 @@ class BaseASR(sb.core.Brain, ABC):
         p_seq = predictions["seq_logprobs"]
 
         reduction = "mean" if reduction == "batch" else reduction
-        postproc = lambda stage, batch, loss, predictions, sorting_dict: loss
+        postproc = lambda __stage, __batch, loss, __predictions, __sorting_dict: loss
         if stage != sb.Stage.TRAIN:
             pass
         elif self.use_fixed_sorting is True:
@@ -1481,7 +1497,7 @@ class BaseASR(sb.core.Brain, ABC):
         # NOTE: We assume that the metric-based CL will be handled on the _compute_seq_loss
         #   function which is always called.
         reduction = "mean" if reduction == "batch" else reduction
-        postproc = lambda stage, batch, loss, predictions: loss
+        postproc = lambda __stage, __batch, loss, __predictions: loss
         if stage != sb.Stage.TRAIN:
             pass
         elif self.use_fixed_sorting is True:
@@ -1495,7 +1511,7 @@ class BaseASR(sb.core.Brain, ABC):
         p_ctc = predictions["ctc_logprobs"]
         # logger.info(f"{p_ctc.shape=}\n======\n{wav_lens=}")
         loss_ctc = self.hparams.ctc_cost(
-            p_ctc, tokens, self.feat_lens, tokens_lens, reduction=reduction
+            p_ctc, tokens, getattr(self, "feat_lens"), tokens_lens, reduction=reduction
         )
         loss_ctc = postproc(stage, batch, loss_ctc, predictions)
         return loss_ctc

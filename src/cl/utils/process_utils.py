@@ -7,7 +7,6 @@ import subprocess
 import unicodedata
 from collections import defaultdict
 from typing import Callable
-from typing import Collection
 from typing import List
 from typing import Optional
 from typing import Union

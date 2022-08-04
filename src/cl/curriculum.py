@@ -1,9 +1,9 @@
-from abc import ABC
-from abc import abstractmethod
 import copy
 import logging
 import os
 import random
+from abc import ABC
+from abc import abstractmethod
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -21,12 +21,15 @@ import speechbrain as sb
 # )
 from speechbrain.dataio.dataset import DynamicItemDataset
 from speechbrain.dataio.dataset import FilteredSortedDynamicItemDataset
-# from speechbrain.utils.distributed import run_on_main
 
 from cl.utils.process_utils import normalize_dict
 from cl.utils.process_utils import normalize_only_durs
 from cl.utils.process_utils import normalize_with_confs
 from cl.utils.process_utils import strip_spaces
+
+
+# from speechbrain.utils.distributed import run_on_main
+
 
 
 # from abc import ABC, abstractmethod
@@ -36,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 class CurriculumBase(DynamicItemDataset, ABC):
     """Base class for creating a DynamicItemDataset that follows CL conventions."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.step = 0
@@ -43,6 +47,7 @@ class CurriculumBase(DynamicItemDataset, ABC):
         self.running_average = 0.0
         self.sorting = kwargs.get("sorting", None)
         self.adaptive_pacing_index = None
+
     @abstractmethod
     def normalize_dict(
         self,
@@ -52,6 +57,7 @@ class CurriculumBase(DynamicItemDataset, ABC):
     ):
         """Performs normalization on the sorting dictionary."""
         return
+
     def split_into_k(
         self,
         k: int,
@@ -132,7 +138,9 @@ class CurriculumBase(DynamicItemDataset, ABC):
             incremental=incremental,
         )
         tmp_path = "/m/teamwork/t40511_asr/p/curriculum-e2e/startover/test_recipes/lahjoita_puhetta/ASR/seq2seq/exps/tests/"
-        with open(os.path.join(tmp_path, "paced_sorted_ids.txt"), "w", encoding="utf-8") as fw:
+        with open(
+            os.path.join(tmp_path, "paced_sorted_ids.txt"), "w", encoding="utf-8"
+        ) as fw:
             for i, el in enumerate(paced_sorted_ids):
                 fw.write(f"{i=}:\t {len(el)=} \t[{', '.join(el[:10])}]\n\n\n\n\n")
         logger.info(
@@ -230,6 +238,7 @@ class CurriculumDataset(CurriculumBase):
     """A wrapper around `DynamicItemDataset` which will change the way the dataset
     is sorted. In addition, it aims at filtering out the "hard" examples.
     """
+
     # TODO: Add the curriculum specific method-names here.
     CURRICULUM_KEYS = ["ctc_loss", "seq_loss", "seq_ctc_loss", "wer", "cer"]
     LOSS_SORTERS = ["ctc_loss", "seq_loss", "seq_ctc_loss"]
@@ -411,6 +420,7 @@ class CurriculumDataset(CurriculumBase):
 # TODO: This is more or less the same as FilteredSortedDynamicItemDataset.
 class CurriculumSubset(CurriculumDataset):
     """Get a DynamicItemDataset's subset (useful for PF-based CL strategies)."""
+
     def __init__(
         self, dataset: CurriculumDataset, indices: Sequence[int], *args, **kwargs
     ) -> None:
