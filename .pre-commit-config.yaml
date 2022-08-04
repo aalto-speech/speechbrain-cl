@@ -16,11 +16,11 @@ repos:
         entry: check-toml
         language: system
         types: [toml]
-      - id: check-yaml
-        name: Check Yaml
-        entry: check-yaml
-        language: system
-        types: [yaml]
+      # - id: check-yaml
+      #   name: Check Yaml
+      #   entry: check-yaml
+      #   language: system
+      #   types: [yaml]
       - id: darglint
         name: darglint
         entry: darglint
