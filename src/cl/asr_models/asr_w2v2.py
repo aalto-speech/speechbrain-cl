@@ -12,13 +12,11 @@ logger = logging.getLogger(__name__)
 class AsrWav2Vec2(ASR_Old):
     def compute_forward(self, batch, stage):
         """Forward computations from the waveform batches to the output probabilities."""
-
         batch = batch.to(self.device)
         wavs, wav_lens = batch.sig
         tokens_bos, _ = batch.tokens_bos
         wavs, wav_lens = wavs.to(self.device), wav_lens.to(self.device)
-
-        ## Add augmentation if specified
+        # Add augmentation if specified
         if stage == sb.Stage.TRAIN:
             if hasattr(self.hparams, "augmentation"):
                 wavs = self.hparams.augmentation(wavs, wav_lens)
@@ -47,7 +45,7 @@ class AsrWav2Vec2(ASR_Old):
             return p_seq, wav_lens, p_tokens, scores
 
     def fit_batch(self, batch):
-        """Train the parameters given a single batch in input"""
+        """Train the parameters given a single batch in input."""
         predictions = self.compute_forward(batch, sb.Stage.TRAIN)
         loss = self.compute_objectives(predictions, batch, sb.Stage.TRAIN)
         loss.backward()
@@ -103,7 +101,7 @@ class AsrWav2Vec2(ASR_Old):
                     self.cer_metric.write_stats(c)
 
     def init_optimizers(self):
-        "Initializes the wav2vec2 optimizer and model optimizer"
+        """Initializes the wav2vec2 optimizer and model optimizer."""
         self.wav2vec_optimizer = self.hparams.wav2vec_opt_class(
             self.modules.wav2vec2.parameters()
         )

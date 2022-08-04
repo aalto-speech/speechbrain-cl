@@ -717,6 +717,12 @@ class BaseASR(sb.core.Brain, ABC):
                 CurriculumDataset._curriculum_filtered_ids
             inplace_norm: If true and `normalize` is also true then the sorting dictionary will
                 be normalized in place (previous values will be overwritten).
+        Returns:
+            The training set after the application of the VPF.
+        Raises:
+            NotImplementedError: If a non CL-based data set is used.
+            ValueError: If the sorting dictionary is empty or invalid.
+            Exception: A generic exception in case the application of the PF fails.
         """
         if not isinstance(self.train_set, CurriculumBase):
             raise NotImplementedError(
@@ -749,7 +755,7 @@ class BaseASR(sb.core.Brain, ABC):
                 reverse=self.reverse,
                 current_epoch=self.current_epoch,
             )
-        except Exception as e:
+        except Exception as exc:
             logger.info("Error occurred when applying the pacing function.")
             logger.info(f"The length of the current sorting dictionary is: {len(sd)}.")
             logger.info(
@@ -758,7 +764,7 @@ class BaseASR(sb.core.Brain, ABC):
             if len(sd) > 0:
                 key1 = list(sd.keys())[0]
                 logger.info(f"Sample from the sorting dictionary {key1}: {sd[key1]}.")
-            raise e
+            raise exc
         return train_set
 
     def subsample_trainset(

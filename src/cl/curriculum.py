@@ -31,7 +31,6 @@ from cl.utils.process_utils import strip_spaces
 # from speechbrain.utils.distributed import run_on_main
 
 
-
 # from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
@@ -76,11 +75,13 @@ class CurriculumBase(DynamicItemDataset, ABC):
         Returns:
             A list of `k` numpy arrays of equal length. If incremental is True then
             each array A_i will contain A_{i-1} + A_i.
+        Raises:
+            ValueError if an invalid/empty dictionary is provided
         """
         sorting_dict = sorting_dict or getattr(self, "sorting_dict", {})
         if sorting_dict:
             raise ValueError(
-                "The class' dictionary is empty, so you need to pass a valid `sorting_dict` argument."
+                "The class' dictionary is empty, you need to pass a valid `sorting_dict` argument."
             )
         sorted_ids = sorted(
             sorting_dict, key=lambda x: sorting_dict[x], reverse=reverse
@@ -114,13 +115,18 @@ class CurriculumBase(DynamicItemDataset, ABC):
                 E.g. if 2, then the easiest group will be used for 2 epochs, then the
                      next group will be used for the next 2 epochs, and so on.
             incremental: If true then each subsequent subset will also contain the easy
-                examples taken from the previous subset. Check CurriculumDataset.split_into_k for more.
+                examples taken from the previous subset. Check CurriculumDataset.split_into_k.
             noise_percentage: For noisy CL. Check CurriculumDataset.filtered_sorted_ids and
                 self.add_random_noise for more.
             normalize: Whether or not the sorting dictionary should be normalized. Notice that
                 this normalization is IN-PLACE if inplace is True. The same normalization happens in
-                CurriculumDataset._curriculum_filtered_ids
+                CurriculumDataset._curriculum_filtered_ids.
             reverse: Descending sorting?
+            current_epoch: Current training epoch.
+        Returns:
+            A FilteredSortedDynamicItemDataset containing the VPF-created subset.
+        Raises:
+            ValueError if an invalid sorting dictionary is provided.
         """
         logger.info(
             f"Number of difficulty groups (k): {n_difficulty_groups=}, {epochs_per_group=}"

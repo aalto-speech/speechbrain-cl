@@ -1,3 +1,5 @@
+""" Utilities for converting to transcription files to the .trn format.
+"""
 import argparse
 import glob
 import os
@@ -8,6 +10,7 @@ from cl.info.find_anomalies import SEPARATOR
 
 
 def convert_to_trn(path: str, out_dir: str = None):
+    """Convert a wer_test*.txt file to .trn format"""
     # `path` is a valid path to a wer_test*.txt file
     # as produced by speechbrain.
     if not os.path.isfile(path):
@@ -20,11 +23,11 @@ def convert_to_trn(path: str, out_dir: str = None):
     # `references` should be in trn format: word1 word2 ... wordN (utterance_id)
     references = []
     hypotheses = []
-    for l in lines:
-        utt_id = l.split(",")[0].replace("\n", "")
-        l = [line for line in l.split("\n") if len(line.strip()) != 0]
-        ref = re.sub(r"\s+", " ", l[1].replace(";", "").replace("<eps>", "")).strip()
-        hyp = re.sub(r"\s+", " ", l[3].replace(";", "").replace("<eps>", "")).strip()
+    for line in lines:
+        utt_id = line.split(",")[0].replace("\n", "")
+        line = [line for line in line.split("\n") if len(line.strip()) != 0]
+        ref = re.sub(r"\s+", " ", line[1].replace(";", "").replace("<eps>", "")).strip()
+        hyp = re.sub(r"\s+", " ", line[3].replace(";", "").replace("<eps>", "")).strip()
         references.append("".join([ref.replace("\n", "").strip(), " (", utt_id, ")\n"]))
         hypotheses.append("".join([hyp.replace("\n", "").strip(), " (", utt_id, ")\n"]))
 

@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 # Brain class for speech recognition training
 class ASR_Aku(BaseASR):
+    """CRDNN + RNN w/ attention speechbrain encoder-decoder architecture."""
+
     def __init__(
         self,
         modules=None,
@@ -43,7 +45,6 @@ class ASR_Aku(BaseASR):
     def compute_forward(self, batch, stage):
         """Runs all the computation of the CTC + seq2seq ASR. It returns the
         posterior probabilities of the CTC and seq2seq networks.
-
         Arguments
         ---------
         batch : PaddedBatch
@@ -112,7 +113,6 @@ class ASR_Aku(BaseASR):
         """Computes the loss given the predicted and targeted outputs. We here
         do multi-task learning and the loss is a weighted sum of the ctc + seq2seq
         costs.
-
         Arguments
         ---------
         predictions : dict
@@ -155,7 +155,6 @@ class ASR_Aku(BaseASR):
         # This needs to be different because on the TRAIN stage we also use curriculum.
         # An example implementation is to initialize the cer, wer computers.
         """Gets called at the beginning of each epoch.
-
         Arguments
         ---------
         stage : sb.Stage
