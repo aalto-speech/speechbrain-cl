@@ -349,6 +349,20 @@ class BaseASR(sb.core.Brain, ABC):
         if stage != sb.Stage.TRAIN:
             return
 
+        def default_sort():
+            reverse = getattr(self.hparams, "reverse", False)
+            train_set = self.train_set.filtered_sorted(
+                sort_key="duration",
+                reverse=reverse,
+                noise_percentage=getattr(self.hparams, "noisy_random_percentage", None),
+            )
+            self.train_loader_kwargs["shuffle"] = False
+            dataloader = self.make_dataloader(
+                train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs
+            )
+            # logger.info(f"On stage start: After default sort. Type of train_set: {type(self.train_set)}.")
+            return dataloader
+
         # ############################################################
         # ###################### CASE 1: No CL #######################
         # ############################################################
@@ -362,7 +376,10 @@ class BaseASR(sb.core.Brain, ABC):
             logger.info(
                 f"Ignoring sorting since {self.start_cl_epoch=} and {self.end_cl_epoch=} while current epoch is {self.current_epoch}."
             )
-            return  # no sorting needs be done
+            if isinstance(self.train_set, DataLoader):
+                return
+            self.train_set = default_sort()
+            return self.train_set
 
         # ############################################################
         # ################### CASE 2: Random CL ######################
@@ -482,22 +499,6 @@ class BaseASR(sb.core.Brain, ABC):
             return
 
         self._curriculum_log_saved = False
-
-        def default_sort():
-            reverse = getattr(self.hparams, "reverse", False)
-            train_set = self.train_set.filtered_sorted(
-                sort_key="duration",
-                reverse=reverse,
-                noise_percentage=getattr(self.hparams, "noisy_random_percentage", None),
-            )
-            self.hparams.dataloader_options["shuffle"] = self.train_loader_kwargs[
-                "shuffle"
-            ] = False
-            dataloader = self.make_dataloader(
-                train_set, stage=sb.Stage.TRAIN, **self.train_loader_kwargs
-            )
-            # logger.info(f"On stage start: After default sort. Type of train_set: {type(self.train_set)}.")
-            return dataloader
 
         def load_and_sort():
             assert (
@@ -621,6 +622,11 @@ class BaseASR(sb.core.Brain, ABC):
         if stage == sb.Stage.TRAIN:
             if self.sorting in CurriculumDataset.CURRICULUM_KEYS:
                 self._loaded_checkpoint = False
+                n_train_set_datapoints = (
+                    len(self.train_set)
+                    if not isinstance(self.train_set, (DataLoader, LoopedLoader))
+                    else len(self.train_set.dataset)
+                )
                 if self.current_epoch + 1 <= getattr(
                     self.hparams, "default_sorting_epochs", 1
                 ):
@@ -637,20 +643,20 @@ class BaseASR(sb.core.Brain, ABC):
                         self.train_subset
                     ), f"{len(self.sorting_dict)=} ... {len(self.train_subset)=}"
                 else:
-                    assert len(self.sorting_dict) == len(
-                        self.train_set
+                    assert (
+                        len(self.sorting_dict) == n_train_set_datapoints
                     ), f"{len(self.sorting_dict)=} ... {len(self.train_set)=}"
                 if not (self.use_fixed_sorting and self.do_subsample):
                     self.final_sortings = self.sorting_dict.copy()
                 elif (
-                    len(self.final_sortings) < len(self.train_set)
+                    len(self.final_sortings) < n_train_set_datapoints
                     and self.do_subsample
                     and self.use_fixed_sorting
                 ):
                     raise ValueError(
                         f"You are doing subsampling with fixed sortings but the final sorting\
                         dictionary does not contain the full sortings ({len(self.final_sortings)=} while\
-                            {len(self.train_set)=} and {len(self.sorting_dict)=})."
+                            {n_train_set_datapoints=} and {len(self.sorting_dict)=})."
                     )
             if self.sorting != "random":
                 self._save_curriculum_log(stage, epoch, self.sorting_dict)
