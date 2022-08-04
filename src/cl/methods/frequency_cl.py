@@ -83,7 +83,6 @@ class FrequencyCL(CurriculumDataset):
         reverse: Optional[bool] = False,
         select_n: Optional[int] = None,
         sorting_dict: Optional[dict] = None,
-        hparams: Optional[dict] = None,
         noise_percentage: Optional[float] = None,
     ):
         if sort_key in self.VALID_FREQUENCY_TYPES:
@@ -113,7 +112,6 @@ class FrequencyCL(CurriculumDataset):
             reverse,
             select_n,
             sorting_dict,
-            hparams,
             noise_percentage,
         )
 

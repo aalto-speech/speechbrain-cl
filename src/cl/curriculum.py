@@ -1,10 +1,9 @@
+from abc import ABC
+from abc import abstractmethod
 import copy
 import logging
 import os
 import random
-import time
-from itertools import islice
-from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -20,11 +19,9 @@ import speechbrain as sb
 #     MetricCurriculum, LossCurriculum,
 #     JointCurriculum, BaseCurriculum
 # )
-import torch
 from speechbrain.dataio.dataset import DynamicItemDataset
 from speechbrain.dataio.dataset import FilteredSortedDynamicItemDataset
-from speechbrain.utils.distributed import run_on_main
-from tqdm import tqdm
+# from speechbrain.utils.distributed import run_on_main
 
 from cl.utils.process_utils import normalize_dict
 from cl.utils.process_utils import normalize_only_durs
@@ -37,7 +34,24 @@ from cl.utils.process_utils import strip_spaces
 logger = logging.getLogger(__name__)
 
 
-class CurriculumBase(DynamicItemDataset):
+class CurriculumBase(DynamicItemDataset, ABC):
+    """Base class for creating a DynamicItemDataset that follows CL conventions."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.step = 0
+        self.sorting_dict = {}
+        self.running_average = 0.0
+        self.sorting = kwargs.get("sorting", None)
+        self.adaptive_pacing_index = None
+    @abstractmethod
+    def normalize_dict(
+        self,
+        sorting_dict,
+        select_n: Optional[int] = None,
+        epsilon: float = 1e-3,
+    ):
+        """Performs normalization on the sorting dictionary."""
+        return
     def split_into_k(
         self,
         k: int,
@@ -57,12 +71,11 @@ class CurriculumBase(DynamicItemDataset):
             A list of `k` numpy arrays of equal length. If incremental is True then
             each array A_i will contain A_{i-1} + A_i.
         """
-        sorting_dict = sorting_dict or {}
-        if len(self.sorting_dict) == 0 and len(sorting_dict) == 0:
+        sorting_dict = sorting_dict or getattr(self, "sorting_dict", {})
+        if sorting_dict:
             raise ValueError(
                 "The class' dictionary is empty, so you need to pass a valid `sorting_dict` argument."
             )
-        sorting_dict = sorting_dict or self.sorting_dict
         sorted_ids = sorted(
             sorting_dict, key=lambda x: sorting_dict[x], reverse=reverse
         )
@@ -119,7 +132,7 @@ class CurriculumBase(DynamicItemDataset):
             incremental=incremental,
         )
         tmp_path = "/m/teamwork/t40511_asr/p/curriculum-e2e/startover/test_recipes/lahjoita_puhetta/ASR/seq2seq/exps/tests/"
-        with open(os.path.join(tmp_path, "paced_sorted_ids.txt"), "w") as fw:
+        with open(os.path.join(tmp_path, "paced_sorted_ids.txt"), "w", encoding="utf-8") as fw:
             for i, el in enumerate(paced_sorted_ids):
                 fw.write(f"{i=}:\t {len(el)=} \t[{', '.join(el[:10])}]\n\n\n\n\n")
         logger.info(
@@ -133,7 +146,7 @@ class CurriculumBase(DynamicItemDataset):
         logger.info(
             f"Adaptive pacing index before update: {getattr(self, 'adaptive_pacing_index', None)}"
         )
-        if not hasattr(self, "adaptive_pacing_index"):
+        if getattr(self, "adaptive_pacing_index", None) is None:
             paced_ids_index = max(0, current_epoch // epochs_per_group - 1)
             n_usage_epochs = current_epoch % epochs_per_group - 1
             self.adaptive_pacing_index = np.array((paced_ids_index, n_usage_epochs))
@@ -170,6 +183,7 @@ class CurriculumBase(DynamicItemDataset):
 
     @classmethod
     def add_random_noise(cls, id_list: List[str], noise_percentage: float = 0.15):
+        """uniform-mixing, a.k.a. inject hard and medium-level examples among the easy ones."""
         assert 0.0 < noise_percentage < 1
         # Step 1: Split list in 3 parts: [easy examples] [medium examples] [hard examples]
         n_ids = len(id_list)
@@ -212,23 +226,14 @@ class CurriculumBase(DynamicItemDataset):
         return out
 
 
-""" A wrapper around `DynamicItemDataset` which will change the way the dataset
-    is sorted. In addition, it aims at filtering out the "hard" examples.
-"""
-
-
 class CurriculumDataset(CurriculumBase):
+    """A wrapper around `DynamicItemDataset` which will change the way the dataset
+    is sorted. In addition, it aims at filtering out the "hard" examples.
+    """
     # TODO: Add the curriculum specific method-names here.
     CURRICULUM_KEYS = ["ctc_loss", "seq_loss", "seq_ctc_loss", "wer", "cer"]
     LOSS_SORTERS = ["ctc_loss", "seq_loss", "seq_ctc_loss"]
     METRIC_SORTERS = ["wer", "cer"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.step = 0
-        self.sorting_dict = {}
-        self.running_average = 0.0
-        self.sorting = kwargs.get("sorting", None)
 
     def _add_duration_key(self):
         # No need to use 'duration' when we have the default implementation.
@@ -244,6 +249,7 @@ class CurriculumDataset(CurriculumBase):
 
     @property
     def sorting(self):
+        """CL scoring method"""
         if not hasattr(self, "_sorting"):
             return None
         return self._sorting
@@ -276,9 +282,9 @@ class CurriculumDataset(CurriculumBase):
         reverse: bool = False,
         select_n: int = None,
         sorting_dict: Optional[dict] = None,
-        hparams: Optional[dict] = None,
         noise_percentage: Optional[float] = None,
     ) -> FilteredSortedDynamicItemDataset:
+        """return a sorted and possibly filtered DynamicItemDataset."""
         if sort_key not in (self.CURRICULUM_KEYS + ["random"]) or (not sorting_dict):
             # If the function is not called for "curriculum learning"
             # then use the default behavior
@@ -397,13 +403,14 @@ class CurriculumDataset(CurriculumBase):
         out_folder = os.path.join(model_folder, "curriculums")
         os.makedirs(out_folder, exist_ok=True)
         out_path = os.path.join(out_folder, f"epoch-{epoch}.txt")
-        with open(out_path, "w") as fw:
+        with open(out_path, "w", encoding="utf-8") as fw:
             fw.write("\n".join(filtered_sorted_ids))
         logger.info(f"Saved the CL ordering under {out_path}.")
 
 
-# TODO: This is more or less the same as FilteredSortedDynamicItemDataset. Converge the two.
+# TODO: This is more or less the same as FilteredSortedDynamicItemDataset.
 class CurriculumSubset(CurriculumDataset):
+    """Get a DynamicItemDataset's subset (useful for PF-based CL strategies)."""
     def __init__(
         self, dataset: CurriculumDataset, indices: Sequence[int], *args, **kwargs
     ) -> None:

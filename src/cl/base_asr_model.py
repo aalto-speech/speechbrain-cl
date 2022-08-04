@@ -1,34 +1,24 @@
 #!/usr/bin/env python3
-import ast
 import logging
 import os
-import random
 import re
-import sys
 import time
 from abc import ABC
 from abc import abstractmethod
-from copy import deepcopy
-from typing import Any
-from typing import Dict
 from typing import List
-from typing import NamedTuple
 from typing import Optional
 
 import numpy as np
 import speechbrain as sb
 import torch
 import yaml
-from numpy.random import shuffle
-from speechbrain.dataio.batch import PaddedBatch
 from speechbrain.dataio.dataloader import LoopedLoader
-from speechbrain.dataio.dataloader import SaveableDataLoader
 
 # from speechbrain.dataio.dataloader import SaveableDataLoader
 from speechbrain.dataio.dataset import DynamicItemDataset
 from speechbrain.dataio.dataset import FilteredSortedDynamicItemDataset
 from speechbrain.utils.data_utils import undo_padding
-from speechbrain.utils.distributed import run_on_main
+# from speechbrain.utils.distributed import run_on_main
 from speechbrain.utils.metric_stats import wer_details_for_batch
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
@@ -354,7 +344,7 @@ class BaseASR(sb.core.Brain, ABC):
             train_set = self.train_set.filtered_sorted(
                 sort_key="duration",
                 reverse=reverse,
-                noise_percentage=getattr(self.hparams, "noisy_random_percentage", None),
+                noise_percentage=0#getattr(self.hparams, "noisy_random_percentage", None),
             )
             self.train_loader_kwargs["shuffle"] = False
             dataloader = self.make_dataloader(
@@ -430,7 +420,7 @@ class BaseASR(sb.core.Brain, ABC):
             and (len(self.current_trainset) > 0)
             and (len(self.sorting_dict) > 0)
         ):
-            logger.info(f"Skipping trainset re-ordering.")
+            logger.info("Skipping trainset re-ordering.")
             train_set = self.current_trainset.filtered_sorted(
                 sort_key=self.sorting,
                 sorting_dict=self.sorting_dict,
@@ -734,13 +724,15 @@ class BaseASR(sb.core.Brain, ABC):
             min(1, n_epochs % epochs_per_group) + n_epochs // epochs_per_group
         )
         try:
+            logger.info("THIS IS WHERE THERE WAS A BUG IN UM-VPFS")
             train_set = self.train_set.adaptive_pacing(
                 sd,
                 n_difficulty_groups,
                 epochs_per_group,
                 incremental,
-                normalize,
-                self.reverse,
+                noise_percentage=getattr(self.hparams, "noisy_random_percentage", None),
+                normalize=normalize,
+                reverse=self.reverse,
                 current_epoch=self.current_epoch,
             )
         except Exception as e:
