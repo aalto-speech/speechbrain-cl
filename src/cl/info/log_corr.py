@@ -20,18 +20,12 @@ from scipy.stats import spearmanr
 from tqdm import tqdm
 
 
-class NoCurriculumOrderings(Exception):
+class NoCurriculumOrderingsError(Exception):
     pass
 
 
 def calc_corr(*paths, **kwargs):
     out_path = kwargs.pop("out_path", None)
-    try:
-        from scipy.stats import spearmanr
-    except ImportError:
-        raise ImportError(
-            "You need to install scipy to use this script. Cannot continue..."
-        )
     show_later = False
     fig = None
     for p in paths:
@@ -50,7 +44,7 @@ def calc_corr(*paths, **kwargs):
                     out_path=out_path,
                     allow_length_one=False,
                 )
-            except NoCurriculumOrderings as ne:
+            except NoCurriculumOrderingsError as ne:
                 print(ne)
                 print(f"Occurred on path {p}")
                 continue
@@ -77,7 +71,7 @@ def _calc_corr_single(*paths, **kwargs):
     curriculums = {}
     types = []
     if len(paths) == 0:
-        raise NoCurriculumOrderings("Could not find any curriculum ordering logs.")
+        raise NoCurriculumOrderingsError("Could not find any curriculum ordering logs.")
     if not kwargs.pop("allow_length_one", True) and len(paths) == 1:
         return
     pbar = tqdm(paths)

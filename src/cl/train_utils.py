@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-""" Generic code to fit a SpeechBrain ASR model with different
-Curriculum Learning techniques. In particular, you may choose
-one of the following methods (in your <hyperparameters>.yaml file):
+"""Generic code to fit a SpeechBrain ASR model with CL techniques.
+
+In particular, you may choose one of the following methods
+(in your <hyperparameters>.yaml file):
 Sorting methods:
     - wer: the train set is decoded and then sorted based on wer
         (set reverse=True for descending).
@@ -52,8 +53,6 @@ from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.distributed import run_on_main
 
 from cl.asr_models import ASR
-from cl.asr_models import ASR_Old
-from cl.asr_models import AsrWav2Vec2
 from cl.base_asr_model import BaseASR
 from cl.curriculum import CurriculumDataset
 from cl.filelist_tokenizer import FileListTokenizer
@@ -69,7 +68,7 @@ logger = logging.getLogger(__name__)
 
 
 def fit(hparams, run_opts, overrides, ASR_Model=ASR):
-
+    """Responsible for calling Brain's .fit method that trains the ASR model."""
     # Create the datasets objects as well as tokenization and encoding :-D
     if hparams.get("use_shards", False):
         data = webdataio_prepare(hparams)
@@ -108,9 +107,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
         )
         logger.info(f"Trying to find sorting dictionary under: {sorting_dict_log}")
         if os.path.isfile(sorting_dict_log):
-            logger.info(
-                f"Found already existing sorting_dict_log, will try to load it."
-            )
+            logger.info("Found already existing sorting_dict_log, will try to load it.")
             asr_brain.load_sorting_dict(epoch=0)
             if len(asr_brain.sorting_dict) < len(asr_brain.train_set):
                 logger.error(
@@ -149,6 +146,7 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
         pm_tokenizer = get_tokenizer(pretrained_hparams, run_opts["device"])
         # Handle trainset pipeline (Here we are making a full copy of the trainset)
         train_dataset = deepcopy(data["train"])
+
         # 3. Define text pipeline:
         @sb.utils.data_pipeline.takes("wrd")
         @sb.utils.data_pipeline.provides(
@@ -241,12 +239,11 @@ def fit(hparams, run_opts, overrides, ASR_Model=ASR):
     )
 
 
-# TODO: Use gender and language?
-
 # Define custom data procedure
 def dataio_prepare(hparams, device):
     """This function prepares the datasets to be used in the brain class.
-    It also defines the data processing pipeline through user-defined functions."""
+    It also defines the data processing pipeline through user-defined functions.
+    """
 
     # 1. Define datasets
     data_folder = hparams["data_folder"]

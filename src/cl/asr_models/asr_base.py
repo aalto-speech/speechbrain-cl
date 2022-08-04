@@ -53,7 +53,7 @@ class ASR_Old(BaseASR):
         feats = self.hparams.compute_features(wavs)
         feats = self.modules.normalize(feats, wav_lens)
 
-        ## Add augmentation if specified
+        # Add augmentation if specified
         if stage == sb.Stage.TRAIN:
             if hasattr(self.hparams, "augmentation"):
                 feats = self.hparams.augmentation(feats)
@@ -136,7 +136,7 @@ class ASR_Old(BaseASR):
         return loss
 
     def fit_batch(self, batch):
-        """Train the parameters given a single batch in input"""
+        """Train the parameters given a single batch in input."""
         predictions = self.compute_forward(batch, sb.Stage.TRAIN)
         loss = self.compute_objectives(predictions, batch, sb.Stage.TRAIN)
         loss.backward()
@@ -146,14 +146,14 @@ class ASR_Old(BaseASR):
         return loss.detach()
 
     def evaluate_batch(self, batch, stage):
-        """Computations needed for validation/test batches"""
+        """Computations needed for validation/test batches."""
         predictions = self.compute_forward(batch, stage=stage)
         with torch.no_grad():
             loss = self.compute_objectives(predictions, batch, stage=stage)
         return loss.detach()
 
     def on_valid_test_stage_start(self, stage):
-        """Gets called before validation or testing"""
+        """Gets called before validation or testing."""
         assert stage != sb.Stage.TRAIN
         self.cer_metric = self.hparams.cer_computer()
         self.wer_metric = self.hparams.error_rate_computer()
