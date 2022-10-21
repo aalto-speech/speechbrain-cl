@@ -27,6 +27,12 @@
 - Pacing functions: improve training time (while performance is on par with speechbrain's baseline).
 - Works as a library on top of `speechbrain`.
 
+## Overview
+
+Implementation of multiple curriculum learning (CL) strategies for Automatic Speech Recognition (ASR). More details behind how our CL strategies work can be found here:
+
+- [Interspeech 2022](https://www.isca-speech.org/archive/interspeech_2022/karakasidis22_interspeech.html) paper: Contains a short analysis of the main CL methods tested in this research (on the Lahjoita Puhetta Finnish dataset).
+- [Aalto University Thesis](https://aaltodoc.aalto.fi/handle/123456789/116342): Contains more background details about CL, introduces new strategies, and provides additional results for the English Common Voice data set.
 
 ## Installation
 
