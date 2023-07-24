@@ -1056,11 +1056,11 @@ test = ["cython", "html5lib", "pytest (>=4.6)", "typed-ast"]
 
 [[package]]
 name = "sphinx-argparse"
-version = "0.3.1"
+version = "0.3.2"
 description = "A sphinx extension that automatically documents argparse commands and options"
 category = "dev"
 optional = false
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+python-versions = ">=3.6"
 
 [package.dependencies]
 sphinx = ">=1.2.0"
@@ -2181,8 +2181,8 @@ sphinx = [
     {file = "Sphinx-5.1.1.tar.gz", hash = "sha256:ba3224a4e206e1fbdecf98a4fae4992ef9b24b85ebf7b584bb340156eaf08d89"},
 ]
 sphinx-argparse = [
-    {file = "sphinx-argparse-0.3.1.tar.gz", hash = "sha256:82151cbd43ccec94a1530155f4ad34f251aaca6a0ffd5516d7fadf952d32dc1e"},
-    {file = "sphinx_argparse-0.3.1-py2.py3-none-any.whl", hash = "sha256:295ccae425874630b6a3b47254854027345d786bab2c3ffd5e9a0407bc6856b2"},
+    {file = "sphinx-argparse-0.3.2.tar.gz", hash = "sha256:e54ad6c8f895ac6bb9d0dd9fa07e47e137a2a42ae18a714515262e86b4cc4bab"},
+    {file = "sphinx_argparse-0.3.2-py3-none-any.whl", hash = "sha256:499afb62d19966651e1e5d601ac912ca2bdfb43f5dad491305d84bef4414f4f4"},
 ]
 sphinx-autobuild = [
     {file = "sphinx-autobuild-2021.3.14.tar.gz", hash = "sha256:de1ca3b66e271d2b5b5140c35034c89e47f263f2cd5db302c9217065f7443f05"},
